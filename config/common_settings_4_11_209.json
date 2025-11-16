@@ -1,0 +1,9 @@
+{
+    "udp": {
+        "h2gcroc_ip": "10.1.2.209",
+        "pc_ip": "10.1.2.207",
+        "h2gcroc_port": 11000,
+        "pc_cmd_port":  11000,
+        "pc_data_port": 11001
+    }
+}

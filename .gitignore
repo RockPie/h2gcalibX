@@ -1,0 +1,6 @@
+*.log
+dump/
+log/
+*.png
+__pycache__/
+.vscode/

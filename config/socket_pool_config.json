@@ -1,0 +1,7 @@
+{
+    "CONTROL_HOST": "127.0.0.1",
+    "CONTROL_PORT": 6002,
+    "DATA_HOST":    "127.0.0.1",
+    "DATA_PORT":    6001,
+    "BUFFER_SIZE":  65536
+}
