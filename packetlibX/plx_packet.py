@@ -1,6 +1,42 @@
 import struct
 
-req_status_format           = '6x2BB37x'
+# # ==== REQUEST FORMATS (now 46 bytes total) ====
+# req_status_format           = '6x2BB36x'
+# req_reset_adj_format        = '6x2BB5x8B24x'
+# req_set_parameters_format   = '6x2BBB3xB32x'
+# req_sys_monitor_format      = '6x2BB37x'
+# req_i2c_read_format         = '6x2BB2x3B32x'
+# req_i2c_write_format        = '6x2BB2x3B32B'
+# req_get_bitslip_format      = '6x2BB37x'
+# req_set_bitslip_format      = '6x2BB5x11B6x10B5x'
+# req_get_debug_data_format   = '6x2BB37x'
+# req_get_pack_counter_format = '6x2BB37x'
+# req_get_proto_monitor       = '6x2BB37x'
+# req_set_monitoring_on       = '6x5B35x'
+# req_set_monitoring_off      = '6x5B35x'
+# req_daq_gen_start_format    = '6x2BBx3B33x'
+# req_daq_gen_read_format     = '6x2BB37x'
+# # req_daq_gen_write_format    = '6x2BB2B2x19B2x4B8x'
+# req_daq_gen_write_format   = '6x5B2x33B'
+# req_trg_param_read_format   = '6x2BB37x'
+# req_trg_param_write_format  = '6x2BB4x7B2x6B2x6B2x6B2x'
+
+# # ==== REPLY FORMATS (now 46 bytes total) ====
+# rpy_status_format           = '6x2BB37B'
+# rpy_sys_monitor_format      = '6x2BB12B21x4B'
+# rpy_i2c_read_format         = '6x2BB2x3B32B'
+# rpy_get_bitslip_format      = '6x2BB6x10B6x10B5x'
+# rpy_get_debug_data_format   = '6x2BB2B4x31B'
+# rpy_get_pack_counter_format = '6x2BB13x24B'
+# rpy_get_proto_monitor_format= '6x40B'
+# # rpy_daq_gen_read_format     = '6x2BB23B2x4B8x'
+# rpy_daq_gen_read_format     = '6x40B'
+# rpy_trg_param_read_format   = '6x2BB4x7B2x6B2x6B2x6B2x'
+# rpy_trigger_format          = '6x2BBx32B4x'
+# rpy_data_format             = '6x40B'
+
+# ==== REQUEST FORMATS (now 46 bytes total) ====
+req_status_format           = '6x2BB36x'
 req_reset_adj_format        = '6x2BB5x8B24x'
 req_set_parameters_format   = '6x2BBB3xB32x'
 req_sys_monitor_format      = '6x2BB37x'
@@ -10,21 +46,26 @@ req_get_bitslip_format      = '6x2BB37x'
 req_set_bitslip_format      = '6x2BB5x11B6x10B5x'
 req_get_debug_data_format   = '6x2BB37x'
 req_get_pack_counter_format = '6x2BB37x'
+req_get_proto_monitor       = '6x2BB37x'
+req_set_monitoring_on       = '6x5B35x'
+req_set_monitoring_off      = '6x5B35x'
 req_daq_gen_start_format    = '6x2BBx3B33x'
 req_daq_gen_read_format     = '6x2BB37x'
 req_daq_gen_write_format    = '6x2BB2B2x19B2x4B8x'
-req_daq_gen2_write_format   = '6x2BB2B2x5Bx19B8x'
+req_daq_gen2_write_format   = '6x5B2x33B'
 req_trg_param_read_format   = '6x2BB37x'
 req_trg_param_write_format  = '6x2BB4x7B2x6B2x6B2x6B2x'
 
+# ==== REPLY FORMATS (now 46 bytes total) ====
 rpy_status_format           = '6x2BB37B'
 rpy_sys_monitor_format      = '6x2BB12B21x4B'
 rpy_i2c_read_format         = '6x2BB2x3B32B'
 rpy_get_bitslip_format      = '6x2BB6x10B6x10B5x'
 rpy_get_debug_data_format   = '6x2BB2B4x31B'
 rpy_get_pack_counter_format = '6x2BB13x24B'
+rpy_get_proto_monitor_format= '6x40B'
 rpy_daq_gen_read_format     = '6x2BB23B2x4B8x'
-rpy_daq_gen2_read_format    = '6x2BB9Bx19B8x'
+rpy_daq_gen2_read_format    = '6x40B'
 rpy_trg_param_read_format   = '6x2BB4x7B2x6B2x6B2x6B2x'
 rpy_trigger_format          = '6x2BBx32B4x'
 rpy_data_format             = '6x40B'
@@ -224,7 +265,25 @@ def pack_data_req_daq_gen_start(header, fpga_address, daq_push, gen_start_stop, 
 def pack_data_req_daq_gen_read(header, fpga_address):
     return struct.pack(req_daq_gen_read_format, header, fpga_address, req_daq_gen_read_code)
 
-def pack_data_req_daq_gen_write(header, fpga_address, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len):
+# def pack_data_req_daq_gen_write(header, fpga_address, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, jumbo_packet_en, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len, daq_en_a0, daq_en_a1, daq_en_a2, daq_en_a3, daq_en_a4, daq_en_a5, daq_en_a6, daq_en_a7):
+#     if ext_trg_en > 1 or jumbo_packet_en > 1 or gen_preimp_en > 1:
+#         print("Invalid daq gen write value")
+#         return None
+#     gen_pre_interval_15_8 = (gen_pre_interval >> 8) & 0xFF
+#     gen_pre_interval_7_0  = gen_pre_interval & 0xFF
+#     gen_nr_of_cycle_31_24 = (gen_nr_of_cycle >> 24) & 0xFF
+#     gen_nr_of_cycle_23_16 = (gen_nr_of_cycle >> 16) & 0xFF
+#     gen_nr_of_cycle_15_8  = (gen_nr_of_cycle >> 8) & 0xFF
+#     gen_nr_of_cycle_7_0   = gen_nr_of_cycle & 0xFF
+#     gen_interval_31_24    = (gen_interval >> 24) & 0xFF
+#     gen_interval_23_16    = (gen_interval >> 16) & 0xFF
+#     gen_interval_15_8     = (gen_interval >> 8) & 0xFF
+#     gen_interval_7_0      = gen_interval & 0xFF
+#     ext_trg_deadtime_7_0 = ext_trg_deadtime & 0xFF
+#     ext_trg_deadtime_15_8 = (ext_trg_deadtime >> 8) & 0xFF
+#     return struct.pack(req_daq_gen_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, jumbo_packet_en, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, ext_trg_deadtime_15_8, ext_trg_deadtime_7_0, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len, daq_en_a0, daq_en_a1, daq_en_a2, daq_en_a3, daq_en_a4, daq_en_a5, daq_en_a6, daq_en_a7)
+
+def pack_data_req_daq_gen_write(header, fpga_address, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, jumbo_en, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len, asic0_collection, asic1_collection, asic2_collection, asic3_collection, asic4_collection, asic5_collection, asic6_collection, asic7_collection):
     if ext_trg_en > 1 or gen_preimp_en > 1:
         print("Invalid daq gen write value")
         return None
@@ -240,8 +299,27 @@ def pack_data_req_daq_gen_write(header, fpga_address, data_coll_en, trig_coll_en
     gen_interval_7_0      = gen_interval & 0xFF
     gen_ext_trg_deadtime_7_0 = ext_trg_deadtime & 0xFF
     gen_ext_trg_deadtime_15_8 = (ext_trg_deadtime >> 8) & 0xFF
-    # return struct.pack(req_daq_gen_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
-    return struct.pack(req_daq_gen2_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, gen_ext_trg_deadtime_15_8, gen_ext_trg_deadtime_7_0, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
+    # return struct.pack(req_daq_gen_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
+    return struct.pack(req_daq_gen2_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, jumbo_en, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, gen_ext_trg_deadtime_15_8, gen_ext_trg_deadtime_7_0, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len, asic0_collection, asic1_collection, asic2_collection, asic3_collection, asic4_collection, asic5_collection, asic6_collection, asic7_collection)
+
+# def pack_data_req_daq_gen_write(header, fpga_address, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len):
+#     if ext_trg_en > 1 or gen_preimp_en > 1:
+#         print("Invalid daq gen write value")
+#         return None
+#     gen_pre_interval_15_8 = (gen_pre_interval >> 8) & 0xFF
+#     gen_pre_interval_7_0  = gen_pre_interval & 0xFF
+#     gen_nr_of_cycle_31_24 = (gen_nr_of_cycle >> 24) & 0xFF
+#     gen_nr_of_cycle_23_16 = (gen_nr_of_cycle >> 16) & 0xFF
+#     gen_nr_of_cycle_15_8  = (gen_nr_of_cycle >> 8) & 0xFF
+#     gen_nr_of_cycle_7_0   = gen_nr_of_cycle & 0xFF
+#     gen_interval_31_24    = (gen_interval >> 24) & 0xFF
+#     gen_interval_23_16    = (gen_interval >> 16) & 0xFF
+#     gen_interval_15_8     = (gen_interval >> 8) & 0xFF
+#     gen_interval_7_0      = gen_interval & 0xFF
+#     gen_ext_trg_deadtime_7_0 = ext_trg_deadtime & 0xFF
+#     gen_ext_trg_deadtime_15_8 = (ext_trg_deadtime >> 8) & 0xFF
+#     # return struct.pack(req_daq_gen_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
+#     return struct.pack(req_daq_gen2_write_format, header, fpga_address, req_daq_gen_write_code, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gem_fcmd, ext_trg_en, ext_trg_delay, gen_preimp_en, gen_pre_interval_15_8, gen_pre_interval_7_0, gen_nr_of_cycle_31_24, gen_nr_of_cycle_23_16, gen_nr_of_cycle_15_8, gen_nr_of_cycle_7_0, gen_interval_31_24, gen_interval_23_16, gen_interval_15_8, gen_interval_7_0, daq_push_fcmd, machine_gun, gen_ext_trg_deadtime_15_8, gen_ext_trg_deadtime_7_0, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
     
 
 
@@ -641,6 +719,7 @@ def unpack_data_rpy_get_pack_counter(data):
 
 def unpack_data_rpy_rpy_daq_gen_read(data):
     unpacked_data          = struct.unpack(rpy_daq_gen2_read_format, data)
+    print(len(rpy_daq_gen2_read_format))
     header                 = unpacked_data[0]
     fpga_address           = unpacked_data[1]
     packet_type            = unpacked_data[2]
@@ -654,29 +733,38 @@ def unpack_data_rpy_rpy_daq_gen_read(data):
     daq_start_stop         = unpacked_data[6]
     daq_fcmd               = unpacked_data[7]
     gen_pre_fcmd           = unpacked_data[8]
-    gem_fcmd               = unpacked_data[9]
+    gen_fcmd               = unpacked_data[9]
     ext_trg_en             = unpacked_data[10] & 0x01
     ext_trg_delay          = unpacked_data[11]
     # ext_trg_deadtime       = unpacked_data[11]
-    gen_preimp_en          = unpacked_data[12] & 0x01
-    gen_pre_interval_15_8  = unpacked_data[13]
-    gen_pre_interval_7_0   = unpacked_data[14]
-    gen_nr_of_cycle_31_24  = unpacked_data[15]
-    gen_nr_of_cycle_23_16  = unpacked_data[16]
-    gen_nr_of_cycle_15_8   = unpacked_data[17]
-    gen_nr_of_cycle_7_0    = unpacked_data[18]
-    gen_interval_31_24     = unpacked_data[19]
-    gen_interval_23_16     = unpacked_data[20]
-    gen_interval_15_8      = unpacked_data[21]
-    gen_interval_7_0       = unpacked_data[22]
-    daq_push_fcmd          = unpacked_data[23]
-    machine_gun            = unpacked_data[24]
-    ext_trg_deadtime_15_8  = unpacked_data[25]
-    ext_trg_deadtime_7_0   = unpacked_data[26]
-    ext_trg_out_0_len      = unpacked_data[27]
-    ext_trg_out_1_len      = unpacked_data[28]
-    ext_trg_out_2_len      = unpacked_data[29]
-    ext_trg_out_3_len      = unpacked_data[30]
+    jumbo_en               = unpacked_data[12]
+    gen_preimp_en          = unpacked_data[13] & 0x01
+    gen_pre_interval_15_8  = unpacked_data[14]
+    gen_pre_interval_7_0   = unpacked_data[15]
+    gen_nr_of_cycle_31_24  = unpacked_data[16]
+    gen_nr_of_cycle_23_16  = unpacked_data[17]
+    gen_nr_of_cycle_15_8   = unpacked_data[18]
+    gen_nr_of_cycle_7_0    = unpacked_data[19]
+    gen_interval_31_24     = unpacked_data[20]
+    gen_interval_23_16     = unpacked_data[21]
+    gen_interval_15_8      = unpacked_data[22]
+    gen_interval_7_0       = unpacked_data[23]
+    daq_push_fcmd          = unpacked_data[24]
+    machine_gun            = unpacked_data[25]
+    ext_trg_deadtime_15_8  = unpacked_data[26]
+    ext_trg_deadtime_7_0   = unpacked_data[27]
+    ext_trg_out_0_len      = unpacked_data[28]
+    ext_trg_out_1_len      = unpacked_data[29]
+    ext_trg_out_2_len      = unpacked_data[30]
+    ext_trg_out_3_len      = unpacked_data[31]
+    asic0_enable           = unpacked_data[32]
+    asic1_enable           = unpacked_data[33]
+    asic2_enable           = unpacked_data[34]
+    asic3_enable           = unpacked_data[35]
+    asic4_enable           = unpacked_data[36]
+    asic5_enable           = unpacked_data[37]
+    asic6_enable           = unpacked_data[38]
+    asic7_enable           = unpacked_data[39]
 
     gen_pre_interval       = (gen_pre_interval_15_8 << 8) | gen_pre_interval_7_0
     gen_nr_of_cycle        = (gen_nr_of_cycle_31_24 << 24) | (gen_nr_of_cycle_23_16 << 16) | (gen_nr_of_cycle_15_8 << 8) | gen_nr_of_cycle_7_0
@@ -693,10 +781,11 @@ def unpack_data_rpy_rpy_daq_gen_read(data):
         "daq_start_stop": daq_start_stop,
         "daq_fcmd": daq_fcmd,
         "gen_pre_fcmd": gen_pre_fcmd,
-        "gem_fcmd": gem_fcmd,
+        "gen_fcmd": gen_fcmd,
         "ext_trg_en": ext_trg_en,
         "ext_trg_delay": ext_trg_delay,
         "ext_trg_deadtime": ext_trg_deadtime,
+        "jumbo_en" : jumbo_en,
         "gen_preimp_en": gen_preimp_en,
         "gen_pre_interval": gen_pre_interval,
         "gen_nr_of_cycle": gen_nr_of_cycle,
@@ -706,8 +795,104 @@ def unpack_data_rpy_rpy_daq_gen_read(data):
         "ext_trg_out_0_len": ext_trg_out_0_len,
         "ext_trg_out_1_len": ext_trg_out_1_len,
         "ext_trg_out_2_len": ext_trg_out_2_len,
-        "ext_trg_out_3_len": ext_trg_out_3_len
+        "ext_trg_out_3_len": ext_trg_out_3_len,
+        "asic0 enable" : asic0_enable,
+        "asic1 enable" : asic1_enable,
+        "asic2 enable" : asic2_enable,
+        "asic3 enable" : asic3_enable,
+        "asic4 enable" : asic4_enable,
+        "asic5 enable" : asic5_enable,
+        "asic6 enable" : asic6_enable,
+        "asic7 enable" : asic7_enable
     }
+# def unpack_data_rpy_rpy_daq_gen_read(data):
+#     unpacked_data          = struct.unpack(rpy_daq_gen_read_format, data)
+#     header                 = unpacked_data[0]
+#     fpga_address           = unpacked_data[1]
+#     packet_type            = unpacked_data[2]
+#     if packet_type != req_daq_gen_read_code:
+#         print("Invalid packet type")
+#         return None
+    
+#     data_coll_en           = unpacked_data[3]
+#     trig_coll_en           = unpacked_data[4]
+#     # gen_start_stop         = unpacked_data[5] & 0x01
+#     # daq_start_stop         = unpacked_data[6]
+#     daq_fcmd               = unpacked_data[5]
+#     gen_pre_fcmd           = unpacked_data[6]
+#     gem_fcmd               = unpacked_data[7]
+#     ext_trg_en             = unpacked_data[8] & 0x01
+#     ext_trg_delay          = unpacked_data[9]
+#     jumbo_enable           = unpacked_data[10] & 0x01
+#     # ext_trg_deadtime       = unpacked_data[11]
+#     gen_preimp_en          = unpacked_data[11] & 0x01
+#     gen_pre_interval_15_8  = unpacked_data[12]
+#     gen_pre_interval_7_0   = unpacked_data[13]
+#     gen_nr_of_cycle_31_24  = unpacked_data[14]
+#     gen_nr_of_cycle_23_16  = unpacked_data[15]
+#     gen_nr_of_cycle_15_8   = unpacked_data[16]
+#     gen_nr_of_cycle_7_0    = unpacked_data[17]
+#     gen_interval_31_24     = unpacked_data[18]
+#     gen_interval_23_16     = unpacked_data[19]
+#     gen_interval_15_8      = unpacked_data[20]
+#     gen_interval_7_0       = unpacked_data[21]
+#     daq_push_fcmd          = unpacked_data[22]
+#     machine_gun            = unpacked_data[23]
+#     ext_trg_deadtime_15_8  = unpacked_data[24]
+#     ext_trg_deadtime_7_0   = unpacked_data[25]
+#     ext_trg_out_0_len      = unpacked_data[26]
+#     ext_trg_out_1_len      = unpacked_data[27]
+#     ext_trg_out_2_len      = unpacked_data[28]
+#     ext_trg_out_3_len      = unpacked_data[29]
+#     asic0_collection       = unpacked_data[30]
+#     asic1_collection       = unpacked_data[31]
+#     asic2_collection       = unpacked_data[32]
+#     asic3_collection       = unpacked_data[33]
+#     asic4_collection       = unpacked_data[34]
+#     asic5_collection       = unpacked_data[35]
+#     asic6_collection       = unpacked_data[36]
+#     asic7_collection       = unpacked_data[37]
+
+
+#     gen_pre_interval       = (gen_pre_interval_15_8 << 8) | gen_pre_interval_7_0
+#     gen_nr_of_cycle        = (gen_nr_of_cycle_31_24 << 24) | (gen_nr_of_cycle_23_16 << 16) | (gen_nr_of_cycle_15_8 << 8) | gen_nr_of_cycle_7_0
+#     gen_interval           = (gen_interval_31_24 << 24) | (gen_interval_23_16 << 16) | (gen_interval_15_8 << 8) | gen_interval_7_0
+#     ext_trg_deadtime       = (ext_trg_deadtime_15_8 << 8) | ext_trg_deadtime_7_0
+
+#     return {
+#         "header": header,
+#         "fpga_address": fpga_address,
+#         "packet_type": packet_type,
+#         "data_coll_en": data_coll_en,
+#         "trig_coll_en": trig_coll_en,
+#         # "gen_start_stop": gen_start_stop,
+#         # "daq_start_stop": daq_start_stop,
+#         "daq_fcmd": daq_fcmd,
+#         "gen_pre_fcmd": gen_pre_fcmd,
+#         "gem_fcmd": gem_fcmd,
+#         "ext_trg_en": ext_trg_en,
+#         "ext_trg_delay": ext_trg_delay,
+#         "jumbo_enable": jumbo_enable,
+#         # "ext_trg_deadtime": ext_trg_deadtime,
+#         "gen_preimp_en": gen_preimp_en,
+#         "gen_pre_interval": gen_pre_interval,
+#         "gen_nr_of_cycle": gen_nr_of_cycle,
+#         "gen_interval": gen_interval,
+#         "daq_push_fcmd": daq_push_fcmd,
+#         "machine_gun": machine_gun,
+#         "ext_trg_out_0_len": ext_trg_out_0_len,
+#         "ext_trg_out_1_len": ext_trg_out_1_len,
+#         "ext_trg_out_2_len": ext_trg_out_2_len,
+#         "ext_trg_out_3_len": ext_trg_out_3_len,
+#         "asic0_collection": asic0_collection,
+#         "asic1_collection": asic1_collection,
+#         "asic2_collection": asic2_collection,
+#         "asic3_collection": asic3_collection,
+#         "asic4_collection": asic4_collection,
+#         "asic5_collection": asic5_collection,
+#         "asic6_collection": asic6_collection,
+#         "asic7_collection": asic7_collection
+#     }
 
 def unpack_data_rpy_trg_param_read(data):
     unpacked_data           = struct.unpack(rpy_trg_param_read_format, data)

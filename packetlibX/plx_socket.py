@@ -171,79 +171,101 @@ def read_save_all_i2c(file_name, _socket, addr, port, asic_num, fpga_addr):
         for key in output_content:
             f.write(key + " : " + " ".join(f"{b:02X}" for b in output_content[key]) + "\n")
     
-def send_check_DAQ_gen_params(socket, addr, port, asic_num, fpga_addr, data_coll_en=0x00, trig_coll_en=0x00, daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, daq_push_fcmd=0x00, machine_gun=0x00, ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, verbose=True, readback=True):
-    if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
-        if verbose:
-            print("Parameter value is too large")
-        return False
-    header = 0xA0 + asic_num
-    data_packet = pack_data_req_daq_gen_write(header, fpga_addr, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
-    if verbose:
-        print("\033[32mSending data packet:\033[0m")
-        for i in range(0, len(data_packet), 8):
-            print(" ".join(f"{b:02X}" for b in data_packet[i:i+8]))
-    socket.sendto(data_packet, (addr, port))
-    data_packet_req_read = pack_data_req_daq_gen_read(header, fpga_addr)
-    clean_socket(socket)
-    if readback:
-        socket.sendto(data_packet_req_read, (addr, port))
-        if verbose:
-            print("\033[32mReceived data packet:\033[0m")
-        received_data, addr = socket.recvfrom(8196)
-        if verbose:
-            for i in range(0, len(received_data), 8):
-                print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
-        unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
-        max_key_length = max(len(key) for key in unpacked_data)
-        if verbose:
-            for key in unpacked_data:
-                print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
-        if bytearray(received_data[7:]) == data_packet[7:]:
-            return True
-        else:
-            return False
-    return True
+# def send_check_DAQ_gen_params(socket, addr, port, asic_num, fpga_addr, data_coll_en=0x00, trig_coll_en=0x00, daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, daq_push_fcmd=0x00, machine_gun=0x00, ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, verbose=True, readback=True):
+#     if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
+#         if verbose:
+#             print("Parameter value is too large")
+#         return False
+#     header = 0xA0 + asic_num
+#     data_packet = pack_data_req_daq_gen_write(header, fpga_addr, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
+#     if verbose:
+#         print("\033[32mSending data packet:\033[0m")
+#         for i in range(0, len(data_packet), 8):
+#             print(" ".join(f"{b:02X}" for b in data_packet[i:i+8]))
+#     socket.sendto(data_packet, (addr, port))
+#     data_packet_req_read = pack_data_req_daq_gen_read(header, fpga_addr)
+#     clean_socket(socket)
+#     if readback:
+#         socket.sendto(data_packet_req_read, (addr, port))
+#         if verbose:
+#             print("\033[32mReceived data packet:\033[0m")
+#         received_data, addr = socket.recvfrom(8196)
+#         if verbose:
+#             for i in range(0, len(received_data), 8):
+#                 print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
+#         unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
+#         max_key_length = max(len(key) for key in unpacked_data)
+#         if verbose:
+#             for key in unpacked_data:
+#                 print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
+#         if bytearray(received_data[7:]) == data_packet[7:]:
+#             return True
+#         else:
+#             return False
+#     return True
 
-def send_check_DAQ_gen_params(socket, addr, port, fpga_addr, data_coll_en=0x00, trig_coll_en=0x00, daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, daq_push_fcmd=0x00, machine_gun=0x00, ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, verbose=True, readback=True):
+# def send_check_DAQ_gen_params(socket, addr, port, fpga_addr, data_coll_en=0x00, trig_coll_en=0x00, daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, daq_push_fcmd=0x00, machine_gun=0x00, ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, verbose=True, readback=True):
+#     if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
+#         if verbose:
+#             print("Parameter value is too large")
+#         return False
+#     header = 0xA0
+#     data_packet = pack_data_req_daq_gen_write(header, fpga_addr, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
+#     if verbose:
+#         print("\033[32mSending data packet:\033[0m")
+#         for i in range(0, len(data_packet), 8):
+#             print(" ".join(f"{b:02X}" for b in data_packet[i:i+8]))
+#     socket.sendto(data_packet, (addr, port))
+#     data_packet_req_read = pack_data_req_daq_gen_read(header, fpga_addr)
+#     clean_socket(socket)
+#     if readback:
+#         socket.sendto(data_packet_req_read, (addr, port))
+#         if verbose:
+#             print("\033[32mReceived data packet:\033[0m")
+#         received_data, addr = socket.recvfrom(8196)
+#         if verbose:
+#             for i in range(0, len(received_data), 8):
+#                 print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
+#         unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
+#         max_key_length = max(len(key) for key in unpacked_data)
+#         if verbose:
+#             for key in unpacked_data:
+#                 print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
+#         if bytearray(received_data[7:]) == data_packet[7:]:
+#             return True
+#         else:
+#             return False
+#     return True
+
+def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr,
+                              data_coll_en=0x00, trig_coll_en=0x00, 
+                              daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, 
+                              ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, 
+                              jumbo_en=0x00, 
+                              gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, 
+                              daq_push_fcmd=0x00, machine_gun=0x00, 
+                              ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, 
+                              asic0_collection=0x30, asic1_collection=0x30, asic2_collection=0x00, asic3_collection=0x00, 
+                              asic4_collection=0x00, asic5_collection=0x00, asic6_collection=0x00, asic7_collection=0x00, 
+                              verbose=True, readback=True):
+    
     if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
         if verbose:
             print("Parameter value is too large")
         return False
     header = 0xA0
-    data_packet = pack_data_req_daq_gen_write(header, fpga_addr, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
-    if verbose:
-        print("\033[32mSending data packet:\033[0m")
-        for i in range(0, len(data_packet), 8):
-            print(" ".join(f"{b:02X}" for b in data_packet[i:i+8]))
-    socket.sendto(data_packet, (addr, port))
-    data_packet_req_read = pack_data_req_daq_gen_read(header, fpga_addr)
-    clean_socket(socket)
-    if readback:
-        socket.sendto(data_packet_req_read, (addr, port))
-        if verbose:
-            print("\033[32mReceived data packet:\033[0m")
-        received_data, addr = socket.recvfrom(8196)
-        if verbose:
-            for i in range(0, len(received_data), 8):
-                print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
-        unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
-        max_key_length = max(len(key) for key in unpacked_data)
-        if verbose:
-            for key in unpacked_data:
-                print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
-        if bytearray(received_data[7:]) == data_packet[7:]:
-            return True
-        else:
-            return False
-    return True
+    # Include ASIC collection bits in the packet
+    data_packet = pack_data_req_daq_gen_write(
+        header, fpga_addr,
+        data_coll_en, trig_coll_en, daq_fcmd,
+        gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime,
+        jumbo_en, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval,
+        daq_push_fcmd, machine_gun,
+        ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len,
+        asic0_collection, asic1_collection, asic2_collection, asic3_collection,
+        asic4_collection, asic5_collection, asic6_collection, asic7_collection
+    )    
 
-def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr, data_coll_en=0x00, trig_coll_en=0x00, daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, daq_push_fcmd=0x00, machine_gun=0x00, ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, verbose=True, readback=True):
-    if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
-        if verbose:
-            print("Parameter value is too large")
-        return False
-    header = 0xA0
-    data_packet = pack_data_req_daq_gen_write(header, fpga_addr, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len)
     if verbose:
         print("\033[32mSending data packet:\033[0m")
         for i in range(0, len(data_packet), 8):
@@ -256,7 +278,7 @@ def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr, da
         if verbose:
             print("\033[32mReceived data packet:\033[0m")
         received_data, _ = _in_socket.recvfrom(8196)
-        if verbose:
+        if 1:
             for i in range(0, len(received_data), 8):
                 print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
         unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
@@ -264,11 +286,46 @@ def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr, da
         if verbose:
             for key in unpacked_data:
                 print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
-        if bytearray(received_data[7:]) == data_packet[7:]:
+        if bytearray(received_data[9:]) == data_packet[9:]:
             return True
         else:
             return False
     return True
+
+# def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr, data_coll_en=0x00, trig_coll_en=0x00, daq_fcmd=0x00, gen_pre_fcmd=0x00, gen_fcmd=0x00, ext_trg_en=0x00, ext_trg_delay=0x00, ext_trg_deadtime=0x00, jumbo_en=0x00, gen_preimp_en=0x00, gen_pre_interval=0x0000, gen_nr_of_cycle=0x00000000, gen_interval=0x00000000, daq_push_fcmd=0x00, machine_gun=0x00, ext_trg_out_0_len=0x00, ext_trg_out_1_len=0x00, ext_trg_out_2_len=0x00, ext_trg_out_3_len=0x00, asic0_collection=0x00, asic1_collection=0x00, asic2_collection=0x00, asic3_collection=0x00, asic4_collection=0x00, asic5_collection=0x00, asic6_collection=0x00, asic7_collection=0x00, verbose=True, readback=True):
+#     print(asic0_collection, asic1_collection, asic2_collection, asic3_collection, asic4_collection, asic5_collection, asic6_collection, asic7_collection)
+#     if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
+#         if verbose:
+#             print("Parameter value is too large")
+#         return False
+#     header = 0xA0
+#     data_packet = pack_data_req_daq_gen_write(header, fpga_addr, data_coll_en, trig_coll_en, daq_fcmd, gen_pre_fcmd, gen_fcmd, ext_trg_en, ext_trg_delay, jumbo_en, ext_trg_deadtime, gen_preimp_en, gen_pre_interval, gen_nr_of_cycle, gen_interval, daq_push_fcmd, machine_gun, ext_trg_out_0_len, ext_trg_out_1_len, ext_trg_out_2_len, ext_trg_out_3_len, asic0_collection, asic1_collection, asic2_collection, asic3_collection, asic4_collection, asic5_collection, asic6_collection, asic7_collection)
+#     if verbose:
+#         print("\033[32mSending data packet:\033[0m")
+#         for i in range(0, len(data_packet), 8):
+#             print(" ".join(f"{b:02X}" for b in data_packet[i:i+8]))
+#     _out_socket.sendto(data_packet, (addr, port))
+#     data_packet_req_read = pack_data_req_daq_gen_read(header, fpga_addr)
+#     # clean_socket(socket)
+#     if readback:
+#         _out_socket.sendto(data_packet_req_read, (addr, port))
+#         if verbose:
+#             print("\033[32mReceived data packet:\033[0m")
+#         received_data, _ = _in_socket.recvfrom(8196)
+#         if verbose:
+#             for i in range(0, len(received_data), 8):
+#                 print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
+#         unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
+#         max_key_length = max(len(key) for key in unpacked_data)
+#         if verbose:
+#             for key in unpacked_data:
+#                 print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
+#         if bytearray(received_data[9:]) == data_packet[9:]:
+#             return True
+#         else:
+#             print("Data does not match")
+#             return False
+#     return True
 
 def set_bitslip(socket, addr, port, asic_num, fpga_addr, io_dly_sel, a0_io_dly_val_fclk, a0_io_dly_val_fcmd, a0_io_dly_val_tr0, a0_io_dly_val_tr1, a0_io_dly_val_tr2, a0_io_dly_val_tr3, a0_io_dly_val_dq0, a0_io_dly_val_dq1, a1_io_dly_val_fclk, a1_io_dly_val_fcmd, a1_io_dly_val_tr0, a1_io_dly_val_tr1, a1_io_dly_val_tr2, a1_io_dly_val_tr3, a1_io_dly_val_dq0, a1_io_dly_val_dq1, verbose=True):
     if a0_io_dly_val_fclk > 0x4FF or a0_io_dly_val_fcmd > 0x4FF or a0_io_dly_val_tr0 > 0x1FF or a0_io_dly_val_tr1 > 0x1FF or a0_io_dly_val_tr2 > 0x1FF or a0_io_dly_val_tr3 > 0x1FF or a0_io_dly_val_dq0 > 0x1FF or a0_io_dly_val_dq1 > 0x1FF or a1_io_dly_val_fclk > 0x4FF or a1_io_dly_val_fcmd > 0x4FF or a1_io_dly_val_tr0 > 0x1FF or a1_io_dly_val_tr1 > 0x1FF or a1_io_dly_val_tr2 > 0x1FF or a1_io_dly_val_tr3 > 0x1FF or a1_io_dly_val_dq0 > 0x1FF or a1_io_dly_val_dq1 > 0x1FF:

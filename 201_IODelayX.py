@@ -1,4 +1,3 @@
-import packetlibX
 import caliblibX
 import argparse     # for input arguments
 import os, json, time
@@ -9,6 +8,7 @@ script_id_str       = os.path.basename(__file__).split('.')[0]
 script_version_str  = '1.1'
 script_folder       = os.path.dirname(__file__)
 print("-- "+ script_id_str + " (v" + script_version_str + ") ----------------")
+print(f"---------------------------------------")
 
 # * --- Read command line arguments -----------------------------------
 parser = argparse.ArgumentParser(description='IO delay scan for HGCROC')
