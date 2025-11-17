@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from collections import deque
 from collections import OrderedDict
+import packetlib
 
 color_list = ['#FF0000', '#0000FF', '#FFFF00', '#00FF00','#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008080', '#FFC0CB']
 
@@ -466,6 +467,7 @@ class h2gcroc_registers_full:
                 continue
             if not self.send_register_from_key(udp_target, reg_key, retry=retry, verbose=verbose):
                 print_err(f"[clx_calib] Failed to send register {reg_key}")
+        return True
 
     def sync_udp_settings(self, udp_target, asic_index=0):
         self.udp_settings["IP Address"]  = udp_target.board_ip
@@ -490,6 +492,88 @@ class h2gcroc_registers_full:
             print_err("Top register not found in settings")
             return False
         
+    def set_inputdac_all(self, input_dac_value):
+        if input_dac_value < 0 or input_dac_value > 63:
+            print_err("Input DAC value must be between 0 and 63")
+            return False
+        for ch_index in range(72):
+            reg_key = f"Channel_{ch_index}"
+            try:
+                ch_reg = self.register_settings[reg_key]
+                ch_reg[0] = (ch_reg[0] & 0xc0) | (input_dac_value & 0x3F)
+            except KeyError:
+                print_err(f"Channel register {reg_key} not found in settings")
+                return False
+        return True
+            
+    def set_chn_trim_inv(self, channel_index, trim_value):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        if trim_value < 0 or trim_value > 63:
+            print_err("Trim value must be between 0 and 63")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            ch_reg[1] = (ch_reg[1] & 0x03) | ((trim_value & 0x3F) << 2)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+        
+    def set_trim_inv_all(self, trim_value):
+        if trim_value < 0 or trim_value > 63:
+            print_err("Trim value must be between 0 and 63")
+            return False
+        for ch_index in range(72):
+            reg_key = f"Channel_{ch_index}"
+            try:
+                ch_reg = self.register_settings[reg_key]
+                ch_reg[1] = (ch_reg[1] & 0x03) | ((trim_value & 0x3F) << 2)
+            except KeyError:
+                print_err(f"Channel register {reg_key} not found in settings")
+                return False
+        return True
+    
+    def set_inv_vref(self, vref_value, half_index):
+        if vref_value < 0 or vref_value > 1023:
+            print_err("VREF value must be between 0 and 1023")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            vref_reg = self.register_settings[reg_key]
+            # bit 2-3 of reg#1
+            vref_reg[1] = (vref_reg[0] & 0xF3) | (( vref_value & 0x03) << 2)
+            # bit 0-7 of reg#4
+            vref_reg[4] = (vref_reg[4] & 0x00) | ((vref_value & 0xFF) << 0)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_noinv_vref(self, vref_value, half_index):
+        if vref_value < 0 or vref_value > 1023:
+            print_err("VREF value must be between 0 and 1023")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            vref_reg = self.register_settings[reg_key]
+            # bit 0-1 of reg#1
+            vref_reg[1] = (vref_reg[0] & 0xFC) | (( vref_value & 0x03) << 0)
+            # bit 0-7 of reg#5
+            vref_reg[5] = (vref_reg[5] & 0x00) | ((vref_value & 0xFF) << 0)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+        
     def turn_on_daq(self, enable=True):
         try:
             top_reg = self.register_settings["Top"]
@@ -500,6 +584,7 @@ class h2gcroc_registers_full:
         except KeyError:
             print_err("Top register not found in settings")
             return False
+        return True
         
     def turn_off_daq(self, disable=True):
         return self.turn_on_daq(not disable)

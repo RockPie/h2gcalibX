@@ -44,3 +44,47 @@ def extract_values_192(bytes_input, verbose=False):
         "_DaqH": _DaqH,
         "_extracted_values": _extracted_values
     }
+
+def extract_raw_data(data):
+    HEADER_SIZE = 14
+    PAYLOAD_SIZE = 192
+    PAYLOAD_START = b'\xAA\x5A'
+
+    payloads = []
+    payload_data = data[HEADER_SIZE:]
+
+    i = 0
+    while i <= len(payload_data) - PAYLOAD_SIZE:
+        # Look for payload start marker
+        if payload_data[i:i+2] == PAYLOAD_START:
+            payload = payload_data[i:i+PAYLOAD_SIZE]
+            payloads.append(payload)
+            i += PAYLOAD_SIZE  # jump to next payload
+        else:
+            i += 1  # move forward one byte if not aligned yet
+
+    return payloads
+
+def DaqH_get_H1(_daqh):
+    if len(_daqh) != 4:
+        return None
+    value = int(_daqh[-1])
+    return (value & 0x40) >> 6
+
+
+def DaqH_get_H2(_daqh):
+    if len(_daqh) != 4:
+        return None
+    value = int(_daqh[-1])
+    return (value & 0x20) >> 5
+
+
+def DaqH_get_H3(_daqh):
+    if len(_daqh) != 4:
+        return None
+    value = int(_daqh[-1])
+    return (value & 0x10) >> 4
+
+def DaqH_start_end_good(_daqh):
+    # return ((_daqh[-1] & 0x0F) == 0x05)
+    return ((_daqh[0] >> 4) == 0x0F or (_daqh[0] >> 4) == 0x05 or (_daqh[0] >> 4) == 0x02) and ((_daqh[-1] & 0x0F) == 0x05 or (_daqh[-1] & 0x0F) == 0x02)
