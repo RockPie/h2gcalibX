@@ -1,18 +1,15 @@
 import caliblibX
-import argparse     # for input arguments
-import os, json, time
+import os, json, time, argparse
 import matplotlib.pyplot as plt
-from loguru import logger
-import packetlib
-import packetlibX
 import termplotlib as tpl
+import numpy as np
 
 # * --- Set up script information -------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
-script_version_str  = '1.1'
+script_version_str  = '1.3'
 script_folder       = os.path.dirname(__file__)
 print("-- "+ script_id_str + " (v" + script_version_str + ") ----------------")
-print(f"---------------------------------------")
+print(f"---------------------------------------------")
 
 # * --- Read command line arguments -----------------------------------
 parser = argparse.ArgumentParser(description='IO delay scan for HGCROC')
@@ -59,6 +56,7 @@ if len(i2c_files) == total_asic:
         try:
             new_i2c_settings = caliblibX.h2gcroc_registers_full()
             new_i2c_settings.load_from_json(i2c_files[asic_idx])
+            print(f"- Loaded I2C settings from {i2c_files[asic_idx]} for ASIC {asic_idx}.")
             if not new_i2c_settings.is_same_udp_settings(udp_target, asic_idx):
                 raise ValueError(f"UDP settings in {i2c_files[asic_idx]} do not match the target UDP settings for ASIC {asic_idx}.")
             register_settings_list.append(new_i2c_settings)
@@ -77,13 +75,6 @@ else:
             exit()
     print("- Using the same I2C settings for all ASICs")
 
-
-
-
-output_config_json["i2c"] = {}
-# output_config_json["i2c"]["top_reg_runLR"] = top_reg_runLR
-# output_config_json["i2c"]["top_reg_offLR"] = top_reg_offLR
-
 # * --- Set running parameters --------------------------------------
 target_pedestal = 100
 if args.target is not None:
@@ -99,7 +90,7 @@ i2c_fragment_life       = 3
 # - machine_gun: number of samples to take for every cycle, recommend to keep under 20,
 #                0 means 1 sample per cycle
 # - phase_setting: phase setting for the ASIC clock (0 - 15)
-machine_gun             = 10
+machine_gun             = 20
 phase_setting           = 12
 
 # - gen_nr_cycle: number of cycles to run the generator
@@ -122,7 +113,7 @@ initial_noinv_vref_list = [noinv_vref_default] * total_asic * 2
 
 # - inputdac_default: default value for the input DAC
 # - pede_trim_default: default value for the pedestal trim
-inputdac_default    = 20
+inputdac_default    = 0
 pede_trim_default   = 31
 
 input_dac_values = [inputdac_default] * 76 * total_asic
@@ -131,12 +122,11 @@ input_dac_values = [inputdac_default] * 76 * total_asic
 # - (DNU) dead_channel_scan_range: range for the step 2 - dead channel scan
 # - (DNU) dead_channel_std_threshold: threshold to determine if a channel is dead
 # global_scan_range           = range(0, 1024, 32)
-global_scan_range           = range(200, 800, 60)
+global_scan_range           = range(200, 800, 30)
 global_scan_fitting_range   = [100, 500]
 zero_chn_threshold          = 1 # not implemented
 dead_channel_scan_range     = range(0, 64, 8)
 dead_channel_std_threshold  = 10
-
 
 # - (DNU) inputdac_step_size: step size for the input DAC tunning
 # - (DNU) inputdac_tolerance: tolerance for the input DAC tunning
@@ -147,208 +137,292 @@ inputdac_tolerance  = 2
 # - (DNU) pede_tolerance: tolerance for the pedestal trim tunning
 pede_trim_step_size = 4
 pede_tolerance      = 2
-pede_trim_attempt_number = 128 // pede_trim_step_size + 1
-pede_trim_values         = [pede_trim_default] * 76 * total_asic
+pede_trim_attempt_number = 64 // pede_trim_step_size + 1
+pede_trim_coarse_attempt_number = 16 // pede_trim_step_size + 1
 
 # - (DNU) ref_inv_scan_range: range for the inverted reference voltage scan
 ref_inv_scan_range  = range(200, 800, 10)
 
-# for _asic in range(total_asic):
-#     print(f"- Setting I2C for ASIC {_asic}...")
-#     _asic_i2c_settings = register_settings_list[_asic]
-#     if not _asic_i2c_settings.set_inputdac_all(inputdac_default):
-#         print(f"Error: Failed to set Input DAC for ASIC {_asic}.")
-#     if not _asic_i2c_settings.set_trim_inv_all(pede_trim_default):
-#         print(f"Error: Failed to set Pedestal Trim for ASIC {_asic}.")
-#     if not _asic_i2c_settings.set_inv_vref(inv_vref_default, 0):
-#         print(f"Error: Failed to set Inverted Vref 0 for ASIC {_asic}.")
-#     if not _asic_i2c_settings.set_inv_vref(inv_vref_default, 1):
-#         print(f"Error: Failed to set Inverted Vref 1 for ASIC {_asic}.")
-#     if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 0):
-#         print(f"Error: Failed to set Non-Inverted Vref 0 for ASIC {_asic}.")
-#     if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 1):
-#         print(f"Error: Failed to set Non-Inverted Vref 1 for ASIC {_asic}.")
-#     _asic_i2c_settings.set_phase(phase_setting)
-#     _asic_i2c_settings.turn_on_daq()
-#     _asic_i2c_settings.send_all_registers(udp_target)
+global_coarse_scan_target = 150
 
-input_i2c_json_names = i2c_files
-config_json = json.load(open(input_i2c_json_names[0], 'r'))
-default_top_reg = config_json["Register Settings"]["Top                 "]
-default_top_reg = [int(x, 16) for x in default_top_reg.split()]
+delay_after_setting_i2c = 0.1  # seconds
 
-top_reg_runLR    = default_top_reg.copy()
-top_reg_runLR[0] = top_reg_runLR[0] | 0x03
-top_reg_runLR    = top_reg_runLR[:8]
+dead_channels = []
 
-top_reg_offLR    = default_top_reg.copy()
-top_reg_offLR[0] = top_reg_offLR[0] & 0xFC
-top_reg_offLR    = top_reg_offLR[:8]
-
-top_reg_runLR[7] = phase_setting & 0x0F
-top_reg_offLR[7] = phase_setting & 0x0F
-
-output_config_json["i2c"] = {}
-output_config_json["i2c"]["top_reg_runLR"] = top_reg_runLR
-output_config_json["i2c"]["top_reg_offLR"] = top_reg_offLR
-# -------------------------------------------------------------------
-
-# -- Global Analog, Channel Wise, Reference Voltage -----------------
-# -------------------------------------------------------------------
-default_channel_wise = config_json["Register Settings"]["Channel_36          "]
-default_channel_wise = [int(x, 16) for x in default_channel_wise.split()]
-
-default_global_analog_0 = config_json["Register Settings"]["Global_Analog_0     "]
-default_global_analog_1 = config_json["Register Settings"]["Global_Analog_1     "]
-default_global_analog_0 = [int(x, 16) for x in default_global_analog_0.split()]
-default_global_analog_1 = [int(x, 16) for x in default_global_analog_1.split()]
-
-# print out the global analog settings
-logger.info(f"Global Analog 0 settings: {default_global_analog_0}")
-logger.info(f"Global Analog 1 settings: {default_global_analog_1}")
-
-default_reference_voltage_0 = config_json["Register Settings"]["Reference_Voltage_0 "]
-default_reference_voltage_1 = config_json["Register Settings"]["Reference_Voltage_1 "]
-default_reference_voltage_0 = [int(x, 16) for x in default_reference_voltage_0.split()]
-default_reference_voltage_1 = [int(x, 16) for x in default_reference_voltage_1.split()]
-
-cmd_outbound_conn = udp_target.cmd_outbound_conn
-data_data_conn    = udp_target.data_data_conn
-data_cmd_conn     = udp_target.data_cmd_conn
-h2gcroc_ip        = udp_target.board_ip
-h2gcroc_port      = udp_target.board_port
-fpga_address      = udp_target.board_id
-
-verbose_global_analog = False
-verbose_reference_voltage = False
-verbose_channel_wise = False
+best_inv_vref_coarse = []
+best_chn_trim        = []
+for _asic in range(total_asic):
+    _asic_chn_trim = [pede_trim_default] * 72
+    best_chn_trim.append(_asic_chn_trim)
+best_inv_vref_fine   = []
 
 for _asic in range(total_asic):
-    # -- Set up global analog -----------------------------------
-    # -----------------------------------------------------------
-    _global_analog_0 = default_global_analog_0.copy()
-    _global_analog_1 = default_global_analog_1.copy()
-
-    if not packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["Global_Analog_0"], reg_addr=0x00, data=_global_analog_0, retry=i2c_retry, verbose=verbose_global_analog):
-        logger.warning(f"Failed to set Global_Analog_0 settings for ASIC {_asic}")
-    if not packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["Global_Analog_1"], reg_addr=0x00, data=_global_analog_1, retry=i2c_retry, verbose=verbose_global_analog):
-        logger.warning(f"Failed to set Global_Analog_1 settings for ASIC {_asic}")
-
-    _ref_voltage_half0 = default_reference_voltage_0.copy()
-    _ref_voltage_half1 = default_reference_voltage_1.copy()
-
-    logger.info(f"preset ref voltage_0 {_ref_voltage_half0}, ref voltage_1 {_ref_voltage_half1}")
-
-    _ref_voltage_half0[1] = ( _ref_voltage_half0[1] & 0xF0) | ((initial_inv_vref_list[_asic*2] & 0x03) << 2) | (initial_noinv_vref_list[_asic*2] & 0x03)
-    _ref_voltage_half1[1] = ( _ref_voltage_half1[1] & 0xF0) | ((initial_inv_vref_list[_asic*2+1] & 0x03) << 2) | (initial_noinv_vref_list[_asic*2+1] & 0x03)
-
-    _ref_voltage_half0[4] = initial_inv_vref_list[_asic*2] >> 2
-    _ref_voltage_half1[4] = initial_inv_vref_list[_asic*2 + 1] >> 2
-    _ref_voltage_half0[5] = initial_noinv_vref_list[_asic*2] >> 2
-    _ref_voltage_half1[5] = initial_noinv_vref_list[_asic*2 + 1] >> 2
-
-    _ref_voltage_half0[7] = 0x00
-    _ref_voltage_half0[6] = 0x00
-    _ref_voltage_half1[7] = 0x00
-    _ref_voltage_half1[6] = 0x00
-
-    _ref_voltage_half0[10] = 0x80
-    _ref_voltage_half1[10] = 0x80
-
-    logger.info(f"modified ref voltage_0 {_ref_voltage_half0}, ref voltage_1 {_ref_voltage_half1}")
-
-    if not packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["Reference_Voltage_0"], reg_addr=0x00, data=_ref_voltage_half0, retry=i2c_retry, verbose=verbose_reference_voltage):
-        logger.warning(f"Failed to set Reference_Voltage_Half_0 settings for ASIC {_asic}")
-    if not packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["Reference_Voltage_1"], reg_addr=0x00, data=_ref_voltage_half1, retry=i2c_retry, verbose=verbose_reference_voltage):
-        logger.warning(f"Failed to set Reference_Voltage_Half_1 settings for ASIC {_asic}")
-        # -----------------------------------------------------------
-    _chn_wise = default_channel_wise.copy()
-    _chn_wise[0] = inputdac_default & 0x3F
-    _chn_wise[3] = (pede_trim_default << 2)  & 0xFC
-    # _chn_wise[4] = 0x04
-    # ! the halfwise readback is not the same as the write value
-    packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["HalfWise_0"], reg_addr=0x00, data=_chn_wise, retry=1, verbose=verbose_channel_wise)
-    packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["HalfWise_1"], reg_addr=0x00, data=_chn_wise, retry=1, verbose=verbose_channel_wise)
-
-    if not packetlibX.send_check_i2c_wrapper(cmd_outbound_conn, data_cmd_conn, h2gcroc_ip, h2gcroc_port, asic_num=_asic, fpga_addr = fpga_address, sub_addr=packetlibX.subblock_address_dict["Top"], reg_addr=0x00, data=top_reg_runLR, retry=i2c_retry, verbose=False):
-        logger.warning(f"Failed to turn on LR for ASIC {_asic}")
-    else:
-        logger.info(f"Turned on LR for ASIC {_asic}")
-
+    print(f"- Setting I2C for ASIC {_asic}...")
+    _asic_i2c_settings = register_settings_list[_asic]
+    if not _asic_i2c_settings.set_inputdac_all(inputdac_default):
+        print(f"Error: Failed to set Input DAC for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_chn_trim_inv_all(best_chn_trim[_asic]):
+        print(f"Error: Failed to set Pedestal Trim for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_inv_vref(inv_vref_default, 0):
+        print(f"Error: Failed to set Inverted Vref 0 for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_inv_vref(inv_vref_default, 1):
+        print(f"Error: Failed to set Inverted Vref 1 for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 0):
+        print(f"Error: Failed to set Non-Inverted Vref 0 for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 1):
+        print(f"Error: Failed to set Non-Inverted Vref 1 for ASIC {_asic}.")
+    _asic_i2c_settings.set_phase(phase_setting)
+    _asic_i2c_settings.turn_on_daq()
+    _asic_i2c_settings.send_all_registers(udp_target)
 
 asic_values = [0x30 if i < total_asic else 0x00 for i in range(8)]
 a0, a1, a2, a3, a4, a5, a6, a7 = asic_values
+
 if not caliblibX.send_check_DAQ_gen_params_calib(
     udp_target, 
-    data_coll_en        = 0x15,
-    trig_coll_en        = 0x00,
+    data_coll_en        = 0x00, trig_coll_en        = 0x00,
     daq_fcmd            = gen_fcmd_L1A,
     gen_pre_fcmd        = gen_fcmd_internal_injection,
     gen_fcmd            = gen_fcmd_L1A,
-    ext_trg_en          = 0x00,
-    ext_trg_delay       = 0x00,
+    ext_trg_en          = 0x00, ext_trg_delay       = 0x00,
     ext_trg_deadtime    = 10000,
     jumbo_en            = 0x00,
-    gen_preimp_en       = 0x01,
-    gen_pre_interval    = 0x0010,
+    gen_preimp_en       = 0x00, gen_pre_interval    = 0x0010,
     gen_nr_of_cycle     = gen_nr_cycle,
     gen_interval        = gen_interval_value,
     daq_push_fcmd       = gen_fcmd_L1A,
     machine_gun         = machine_gun,
-    ext_trg_out_0_len   = 0x00,
-    ext_trg_out_1_len   = 0x00,
-    ext_trg_out_2_len   = 0x00,
-    ext_trg_out_3_len   = 0x00,
-    asic0_collection    = a0,
-    asic1_collection    = a1,
-    asic2_collection    = a2,
-    asic3_collection    = a3,
-    asic4_collection    = a4,
-    asic5_collection    = a5,
-    asic6_collection    = a6,
-    asic7_collection    = a7,
+    ext_trg_out_0_len   = 0x00, ext_trg_out_1_len   = 0x00,
+    ext_trg_out_2_len   = 0x00, ext_trg_out_3_len   = 0x00,
+    asic0_collection    = a0,   asic1_collection    = a1,
+    asic2_collection    = a2,   asic3_collection    = a3,
+    asic4_collection    = a4,   asic5_collection    = a5,
+    asic6_collection    = a6,   asic7_collection    = a7,
     verbose             = False,
     readback            = True
 ):
     print("-- Warning: Failed to set DAQ/Gen parameters.")
 
-corase_scan_ref_values    = [] # < scans
-corase_scan_noinv_values  = []
-average_pedestals         = [[] for _ in range(2*total_asic)]   # < halves < scans
-average_pedestals_err     = [[] for _ in range(2*total_asic)]   # < halves < scans
-channel_scan_adcs         = [[] for _ in range(76*total_asic)]  # < channels < scans
 
-_ref_noinv = noinv_vref_default
+# * --- Global scan of inverted reference voltage ------------------------------
+scan_global_inv_ref_adc_avg = np.zeros((2*total_asic, len(global_scan_range)), dtype=float)
+scan_global_inv_ref_adc_err = np.zeros((2*total_asic, len(global_scan_range)), dtype=float)
+
 for _ref_inv in global_scan_range:
+    print(f"- Setting Inverted Vref to {_ref_inv}")
     for _asic in range(total_asic):
-        print(f"- Setting I2C for ASIC {_asic}...")
         _asic_i2c_settings = register_settings_list[_asic]
-        # if not _asic_i2c_settings.set_inputdac_all(inputdac_default):
-        #     print(f"Error: Failed to set Input DAC for ASIC {_asic}.")
-        # if not _asic_i2c_settings.set_trim_inv_all(pede_trim_default):
-        #     print(f"Error: Failed to set Pedestal Trim for ASIC {_asic}.")
         if not _asic_i2c_settings.set_inv_vref(_ref_inv, 0):
             print(f"Error: Failed to set Inverted Vref 0 for ASIC {_asic}.")
         if not _asic_i2c_settings.set_inv_vref(_ref_inv, 1):
             print(f"Error: Failed to set Inverted Vref 1 for ASIC {_asic}.")
-        # if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 0):
-        #     print(f"Error: Failed to set Non-Inverted Vref 0 for ASIC {_asic}.")
-        # if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 1):
-        #     print(f"Error: Failed to set Non-Inverted Vref 1 for ASIC {_asic}.")
-        # _asic_i2c_settings.set_phase(phase_setting)
-        # _asic_i2c_settings.turn_on_daq()
+
         _asic_i2c_settings.send_reference_voltage_0_register(udp_target)
         _asic_i2c_settings.send_reference_voltage_1_register(udp_target)
 
-    time.sleep(0.1)
-    cmd_outbound_conn = udp_target.cmd_outbound_conn
-    data_data_conn    = udp_target.data_data_conn
-    h2gcroc_ip        = udp_target.board_ip
-    h2gcroc_port      = udp_target.board_port
-    fpga_address      = udp_target.board_id
-    fragment_life    = i2c_fragment_life
-    adc_mean_list, adc_err_list = caliblibX.measure_adc(cmd_outbound_conn, data_data_conn, h2gcroc_ip, h2gcroc_port, total_asic, fpga_address, expected_event_number, fragment_life, logger, i2c_retry)
+    time.sleep(delay_after_setting_i2c)
+    adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
 
-    print("- Measurement results after DAQ/Gen setup:")
-    print(adc_mean_list)
-    print(adc_err_list)
+    caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+    for _half in range(2*total_asic):
+        scan_global_inv_ref_adc_avg[_half, global_scan_range.index(_ref_inv)] = half_avg_list[_half]
+        scan_global_inv_ref_adc_err[_half, global_scan_range.index(_ref_inv)] = half_err_list[_half]
+
+for _half in range(2*total_asic):
+    adc_values = scan_global_inv_ref_adc_avg[_half, :]
+    diffs = np.abs(adc_values - global_coarse_scan_target)
+    best_index = np.argmin(diffs)
+    best_inv_vref = list(global_scan_range)[best_index]
+    best_inv_vref_coarse.append(best_inv_vref)
+    print(f"-- Half {_half}: Best Inverted Vref = {best_inv_vref}, Achieved Pedestal = {adc_values[best_index]:.2f}")
+
+fig_global_inv_coarse, axs_global_inv_coarse = plt.subplots(1, 1, figsize=(10, 6))
+for _half in range(2*total_asic):
+    axs_global_inv_coarse.errorbar(
+        list(global_scan_range),
+        scan_global_inv_ref_adc_avg[_half, :],
+        yerr=scan_global_inv_ref_adc_err[_half, :],
+        label=f'Half {_half}'
+    )
+    # draw the best point as a vertical line
+    best_inv_vref = best_inv_vref_coarse[_half]
+    axs_global_inv_coarse.axvline(x=best_inv_vref, color='r', linestyle='--', alpha=0.5)
+axs_global_inv_coarse.set_title('Global Scan of Inverted Reference Voltage')
+axs_global_inv_coarse.set_xlabel('Inverted Reference Voltage Setting')
+axs_global_inv_coarse.set_ylabel('Average ADC Value')
+axs_global_inv_coarse.legend()
+fig_global_inv_coarse.tight_layout()
+fig_global_inv_coarse_path = os.path.join(output_dump_folder, 'global_inv_ref_scan.png')
+fig_global_inv_coarse.savefig(fig_global_inv_coarse_path)
+print(f"- Saved global inverted reference voltage scan plot to {fig_global_inv_coarse_path}")
+
+# set the best inverted reference voltage found
+for _asic in range(total_asic):
+    _asic_i2c_settings = register_settings_list[_asic]
+    best_inv_vref_0 = best_inv_vref_coarse[2*_asic]
+    best_inv_vref_1 = best_inv_vref_coarse[2*_asic + 1]
+    if not _asic_i2c_settings.set_inv_vref(best_inv_vref_0, 0):
+        print(f"Error: Failed to set Inverted Vref 0 for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_inv_vref(best_inv_vref_1, 1):
+        print(f"Error: Failed to set Inverted Vref 1 for ASIC {_asic}.")
+
+    _asic_i2c_settings.send_reference_voltage_0_register(udp_target)
+    _asic_i2c_settings.send_reference_voltage_1_register(udp_target)
+
+time.sleep(delay_after_setting_i2c)
+
+adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
+
+caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
+half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+
+fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Coarse Global Inverted Reference Voltage Scan', dead_channels, half_avg_list)
+fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'pede_after_global_inv_scan.png'))
+print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, 'pede_after_global_inv_scan.png')}")
+
+# * --- Coarse pedestal trim tuning with inverted reference voltage -------------
+
+caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, half_avg_list, pede_tolerance, pede_trim_step_size)
+
+for _tune_attempt in range(pede_trim_coarse_attempt_number):
+
+    print(f"- Tune Attempt {_tune_attempt + 1} / {pede_trim_coarse_attempt_number}:")
+
+    for _asic in range(total_asic):
+        _asic_i2c_settings = register_settings_list[_asic]
+        if not _asic_i2c_settings.set_chn_trim_inv_all(best_chn_trim[_asic]):
+            print(f"Error: Failed to set Pedestal Trim for ASIC {_asic}.")
+        _asic_i2c_settings.send_all_channel_registers(udp_target)
+
+    time.sleep(delay_after_setting_i2c)
+
+    adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
+
+    caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+
+    if _tune_attempt < pede_trim_coarse_attempt_number - 1:
+        caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, half_avg_list, pede_tolerance, pede_trim_step_size)
+    else:
+        fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Coarse Pedestal Trim', dead_channels, half_avg_list)
+        fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'coarse_pede_trim.png'))
+        print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, 'coarse_pede_trim.png')}")
+
+# * --- Fine inv_vref scan ---------------------------------------------------
+global_inv_scan_range_min = min(best_inv_vref_coarse) - 20
+global_inv_scan_range_max = max(best_inv_vref_coarse) + 80
+if global_inv_scan_range_min < 0:
+    global_inv_scan_range_min = 0
+if global_inv_scan_range_max > 1023:
+    global_inv_scan_range_max = 1023
+global_scan_fine = range(global_inv_scan_range_min, global_inv_scan_range_max, 5)
+scan_global_inv_ref_adc_avg_fine = np.zeros((2*total_asic, len(global_scan_fine)), dtype=float)
+scan_global_inv_ref_adc_err_fine = np.zeros((2*total_asic, len(global_scan_fine)), dtype=float)
+
+for _ref_inv in global_scan_fine:
+    print(f"- Setting Inverted Vref to {_ref_inv}")
+    for _asic in range(total_asic):
+        _asic_i2c_settings = register_settings_list[_asic]
+        if not _asic_i2c_settings.set_inv_vref(_ref_inv, 0):
+            print(f"Error: Failed to set Inverted Vref 0 for ASIC {_asic}.")
+        if not _asic_i2c_settings.set_inv_vref(_ref_inv, 1):
+            print(f"Error: Failed to set Inverted Vref 1 for ASIC {_asic}.")
+
+        _asic_i2c_settings.send_reference_voltage_0_register(udp_target)
+        _asic_i2c_settings.send_reference_voltage_1_register(udp_target)
+
+    time.sleep(delay_after_setting_i2c)
+    adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
+
+    caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+    for _half in range(2*total_asic):
+        scan_global_inv_ref_adc_avg_fine[_half, global_scan_fine.index(_ref_inv)] = half_avg_list[_half]
+        scan_global_inv_ref_adc_err_fine[_half, global_scan_fine.index(_ref_inv)] = half_err_list[_half]
+
+for _half in range(2*total_asic):
+    adc_values = scan_global_inv_ref_adc_avg_fine[_half, :]
+    diffs = np.abs(adc_values - target_pedestal)
+    best_index = np.argmin(diffs)
+    best_inv_vref = list(global_scan_fine)[best_index]
+    best_inv_vref_fine.append(best_inv_vref)
+    print(f"-- Half {_half}: Best Inverted Vref = {best_inv_vref}, Achieved Pedestal = {adc_values[best_index]:.2f}")
+
+fig_global_inv_fine, axs_global_inv_fine = plt.subplots(1, 1, figsize=(10, 6))
+for _half in range(2*total_asic):
+    axs_global_inv_fine.errorbar(
+        list(global_scan_fine),
+        scan_global_inv_ref_adc_avg_fine[_half, :],
+        yerr=scan_global_inv_ref_adc_err_fine[_half, :],
+        label=f'Half {_half}'
+    )
+    # draw the best point as a vertical line
+    best_inv_vref = best_inv_vref_fine[_half]
+    axs_global_inv_fine.axvline(x=best_inv_vref, color='r', linestyle='--', alpha=0.5)
+axs_global_inv_fine.set_title('Fine Scan of Inverted Reference Voltage')
+axs_global_inv_fine.set_xlabel('Inverted Reference Voltage Setting')
+axs_global_inv_fine.set_ylabel('Average ADC Value')
+axs_global_inv_fine.legend()
+fig_global_inv_fine.tight_layout()
+fig_global_inv_fine_path = os.path.join(output_dump_folder, 'global_inv_ref_scan_fine.png')
+fig_global_inv_fine.savefig(fig_global_inv_fine_path)
+print(f"- Saved fine global inverted reference voltage scan plot to {fig_global_inv_fine_path}")
+
+# set the best inverted reference voltage found
+for _asic in range(total_asic):
+    _asic_i2c_settings = register_settings_list[_asic]
+    best_inv_vref_0 = best_inv_vref_fine[2*_asic]
+    best_inv_vref_1 = best_inv_vref_fine[2*_asic + 1]
+    if not _asic_i2c_settings.set_inv_vref(best_inv_vref_0, 0):
+        print(f"Error: Failed to set Inverted Vref 0 for ASIC {_asic}.")
+    if not _asic_i2c_settings.set_inv_vref(best_inv_vref_1, 1):
+        print(f"Error: Failed to set Inverted Vref 1 for ASIC {_asic}.")
+
+    _asic_i2c_settings.send_reference_voltage_0_register(udp_target)
+    _asic_i2c_settings.send_reference_voltage_1_register(udp_target)
+
+time.sleep(delay_after_setting_i2c)
+
+adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
+
+caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
+halves_target_list = [target_pedestal] * 2 * total_asic
+
+fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Fine Inverted Reference Voltage Scan', dead_channels, halves_target_list)
+fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'fine_inv_vref_scan.png'))
+print(f"- Saved pedestal plot after fine inverted reference voltage scan to {os.path.join(output_dump_folder, 'fine_inv_vref_scan.png')}")
+
+# * --- Final fine tune of pedestal trim with inverted reference voltage -----
+caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, halves_target_list, pede_tolerance//2, pede_trim_step_size//2)
+
+for _tune_attempt in range(pede_trim_attempt_number):
+    
+    print(f"- Final Tune Attempt {_tune_attempt + 1} / {pede_trim_attempt_number}:")
+
+    for _asic in range(total_asic):
+        _asic_i2c_settings = register_settings_list[_asic]
+        if not _asic_i2c_settings.set_chn_trim_inv_all(best_chn_trim[_asic]):
+            print(f"Error: Failed to set Pedestal Trim for ASIC {_asic}.")
+        _asic_i2c_settings.send_all_channel_registers(udp_target)
+
+    time.sleep(delay_after_setting_i2c)
+
+    adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
+
+    caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+
+    if _tune_attempt < pede_trim_attempt_number - 1:
+        caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, halves_target_list, pede_tolerance//2, pede_trim_step_size//2)
+    else:
+        fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Final Fine Pedestal Trim', dead_channels, halves_target_list)
+        fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'final_fine_pede_trim.png'))
+        print(f"- Saved pedestal plot after final fine pedestal trim to {os.path.join(output_dump_folder, 'final_fine_pede_trim.png')}")
+
+# * --- Save final settings -----------------------------------------------
+for _asic in range(total_asic):
+    _asic_i2c_settings = register_settings_list[_asic]
+    output_i2c_path = os.path.join(output_dump_folder, f'asic_{_asic}_final_i2c_settings.json')
+    _asic_i2c_settings.save_to_json(output_i2c_path)
+    print(f"- Saved final I2C settings for ASIC {_asic} to {output_i2c_path}")

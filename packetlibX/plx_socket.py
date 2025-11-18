@@ -248,7 +248,6 @@ def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr,
                               asic0_collection=0x30, asic1_collection=0x30, asic2_collection=0x00, asic3_collection=0x00, 
                               asic4_collection=0x00, asic5_collection=0x00, asic6_collection=0x00, asic7_collection=0x00, 
                               verbose=True, readback=True):
-    
     if ext_trg_en > 0x01 or gen_preimp_en > 0x01:
         if verbose:
             print("Parameter value is too large")
@@ -278,17 +277,13 @@ def send_check_DAQ_gen_params(_out_socket, _in_socket, addr, port, fpga_addr,
         if verbose:
             print("\033[32mReceived data packet:\033[0m")
         received_data, _ = _in_socket.recvfrom(8196)
-        if 1:
-            for i in range(0, len(received_data), 8):
-                print(" ".join(f"{b:02X}" for b in received_data[i:i+8]))
+
         unpacked_data = unpack_data_rpy_rpy_daq_gen_read(received_data)
         max_key_length = max(len(key) for key in unpacked_data)
         if verbose:
             for key in unpacked_data:
                 print(f"{key:<{max_key_length}} : {hex(unpacked_data[key])}")
-        if bytearray(received_data[9:]) == data_packet[9:]:
-            return True
-        else:
+        if bytearray(received_data[9:]) != data_packet[9:]:
             return False
     return True
 

@@ -719,7 +719,6 @@ def unpack_data_rpy_get_pack_counter(data):
 
 def unpack_data_rpy_rpy_daq_gen_read(data):
     unpacked_data          = struct.unpack(rpy_daq_gen2_read_format, data)
-    print(len(rpy_daq_gen2_read_format))
     header                 = unpacked_data[0]
     fpga_address           = unpacked_data[1]
     packet_type            = unpacked_data[2]
