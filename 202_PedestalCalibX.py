@@ -90,7 +90,7 @@ i2c_fragment_life       = 3
 # - machine_gun: number of samples to take for every cycle, recommend to keep under 20,
 #                0 means 1 sample per cycle
 # - phase_setting: phase setting for the ASIC clock (0 - 15)
-machine_gun             = 20
+machine_gun             = 10
 phase_setting           = 12
 
 # - gen_nr_cycle: number of cycles to run the generator
@@ -311,7 +311,7 @@ for _tune_attempt in range(pede_trim_coarse_attempt_number):
 
 # * --- Fine inv_vref scan ---------------------------------------------------
 global_inv_scan_range_min = min(best_inv_vref_coarse) - 20
-global_inv_scan_range_max = max(best_inv_vref_coarse) + 80
+global_inv_scan_range_max = max(best_inv_vref_coarse) + 100
 if global_inv_scan_range_min < 0:
     global_inv_scan_range_min = 0
 if global_inv_scan_range_max > 1023:

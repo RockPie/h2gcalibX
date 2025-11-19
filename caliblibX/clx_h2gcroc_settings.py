@@ -164,20 +164,6 @@ class h2gcroc_registers_full:
                 return False
         return True
     
-    # def set_trim_inv_all(self, trim_value):
-    #     if trim_value < 0 or trim_value > 63:
-    #         print_err("Trim value must be between 0 and 63")
-    #         return False
-    #     for ch_index in range(72):
-    #         reg_key = f"Channel_{ch_index}"
-    #         try:
-    #             ch_reg = self.register_settings[reg_key]
-    #             ch_reg[1] = (ch_reg[1] & 0x03) | ((trim_value & 0x3F) << 2)
-    #         except KeyError:
-    #             print_err(f"Channel register {reg_key} not found in settings")
-    #             return False
-    #     return True
-    
     def set_inv_vref(self, vref_value, half_index):
         if vref_value < 0 or vref_value > 1023:
             print_err("VREF value must be between 0 and 1023")
@@ -289,7 +275,6 @@ class h2gcroc_registers_full:
         return True
 
     def save_to_json(self, json_file):
-        # 计算写回时 key 的宽度
         if self.register_settings:
             max_logical = max(len(k) for k in self.register_settings.keys())
             width = max(self._register_key_width, max_logical)
@@ -300,13 +285,11 @@ class h2gcroc_registers_full:
         for logical_key, value in self.register_settings.items():
             padded_key = logical_key.ljust(width)
 
-            # ---- 在这里把 bytearray 转回 "xx xx xx" 字符串 ----
             if isinstance(value, (bytes, bytearray)):
-                hex_str = " ".join(f"{b:02x}" for b in value)  # 小写十六进制
+                hex_str = " ".join(f"{b:02x}" for b in value)
             elif isinstance(value, list):
                 hex_str = " ".join(f"{int(b) & 0xFF:02x}" for b in value)
             elif isinstance(value, str):
-                # 已经是字符串就直接写，但不推荐
                 hex_str = value
             else:
                 print_err(f"Unsupported value type when saving {logical_key}: {type(value)}")

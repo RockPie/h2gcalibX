@@ -1,9 +1,6 @@
-# 000_UI_test.py
 from __future__ import annotations
 
-import asyncio
-import os
-import sys
+import asyncio, os, sys
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Button, Static
@@ -89,7 +86,6 @@ class IODelayApp(App):
         code = process.returncode
         output_text.append(f"\n✅ Process finished with exit code {code}.")
         output_box.update("".join(output_text))
-
 
 if __name__ == "__main__":
     IODelayApp().run()

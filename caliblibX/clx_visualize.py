@@ -11,7 +11,7 @@ halves_color_list = [
     '#F5DEB3', '#D3DCDC', '#FFFACD', '#EEDD82'
 ]
 
-def print_adc_to_terminal(adc_values_mean, adc_values_err, channel_nums = [3, 4]):
+def print_adc_to_terminal(adc_values_mean, adc_values_err, channel_nums = [3, 4, 5]):
     # only print the channel in channel_nums
     if len(adc_values_err) != len(adc_values_mean):
         print("[clx visualize] Length of adc_values_err and adc_values_mean do not match!")
@@ -32,7 +32,8 @@ def print_adc_to_terminal(adc_values_mean, adc_values_err, channel_nums = [3, 4]
             for _chn in channel_nums:
                 idx = _asic * 76 + _half * 38 + _chn
                 # fixed 4 digit int for mean and 2 digit int for err
-                str_print += f"Ch{_chn+38*_half:02d} {int(adc_values_mean[idx]):3d}±{int(adc_values_err[idx]):2d}  "
+                str_print += f"Ch{_chn+38*_half:02d} {int(adc_values_mean[idx]):3d} "
+            str_print += " || "
 
         print(str_print)
 
