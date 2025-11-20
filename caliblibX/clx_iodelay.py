@@ -1,8 +1,14 @@
 import packetlibX as packetlib
 import time
 import numpy as np
+from .clx_udp import udp_target
 
-def delay_test(_cmd_out_conn, _cmd_in_conn, _h2gcroc_ip, _h2gcroc_port, _fpga_addr, _delay_setting, _asic_index, _asic_sel, _locked_pattern = 0xaccccccc, _test_trigger_lines=False, _test_cycles=20, _verbose=False):
+def delay_test(_udp_target, _delay_setting, _asic_index, _asic_sel, _locked_pattern = 0xaccccccc, _test_trigger_lines=False, _test_cycles=20, _verbose=False):
+    _cmd_out_conn = _udp_target.cmd_outbound_conn
+    _cmd_in_conn  = _udp_target.data_cmd_conn
+    _h2gcroc_ip   = _udp_target.board_ip
+    _h2gcroc_port = _udp_target.board_port
+    _fpga_addr    = _udp_target.board_id
     if not packetlib.set_bitslip(_cmd_out_conn, _cmd_in_conn, _h2gcroc_ip, _h2gcroc_port, fpga_addr=_fpga_addr, asic_num=_asic_index, io_dly_sel=_asic_sel, a0_io_dly_val_fclk=0x000, a0_io_dly_val_fcmd=0x400, a1_io_dly_val_fclk=0x000, a1_io_dly_val_fcmd=0x400, a0_io_dly_val_tr0=_delay_setting, a0_io_dly_val_tr1=_delay_setting, a0_io_dly_val_tr2=_delay_setting, a0_io_dly_val_tr3=_delay_setting, a0_io_dly_val_dq0=_delay_setting, a0_io_dly_val_dq1=_delay_setting, a1_io_dly_val_tr0=_delay_setting, a1_io_dly_val_tr1=_delay_setting, a1_io_dly_val_tr2=_delay_setting, a1_io_dly_val_tr3=_delay_setting, a1_io_dly_val_dq0=_delay_setting, a1_io_dly_val_dq1=_delay_setting, verbose=False):
         if _verbose:
             print('\033[33m' + "Warning in setting bitslip 0" + '\033[0m')
@@ -63,6 +69,8 @@ def delay_test(_cmd_out_conn, _cmd_in_conn, _h2gcroc_ip, _h2gcroc_port, _fpga_ad
 
     return _all_lines_locked
 
+
+# TODO: update the function to use udp_target class
 def quick_iodelay_setting(_cmd_out_conn, _cmd_in_conn, _h2gcroc_ip, _h2gcroc_port, _fpga_addr, _asic_num, _good_setting_window_len=20, _locked_pattern = 0xaccccccc,_test_trigger_lines=False, _test_cycles=50, _verbose=False):
     """
     This function is used to set the iodelay of the ASICs very quickly.

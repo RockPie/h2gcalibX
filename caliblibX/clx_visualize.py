@@ -11,6 +11,14 @@ halves_color_list = [
     '#F5DEB3', '#D3DCDC', '#FFFACD', '#EEDD82'
 ]
 
+# * ---------------------------------------------------------------------------
+# * - brief: print the adc mean and error values for selected to terminal
+# * - param:
+# * -   adc_values_mean: [asic_num * 76] measured adc mean values
+# * -   adc_values_err: [asic_num * 76] measured adc error values
+# * -   channel_nums: list of channel numbers (excluding common-mode and 
+# * -                 calibration channels) to be printed; default to [3, 4, 5]
+# * ---------------------------------------------------------------------------
 def print_adc_to_terminal(adc_values_mean, adc_values_err, channel_nums = [3, 4, 5]):
     # only print the channel in channel_nums
     if len(adc_values_err) != len(adc_values_mean):
@@ -21,91 +29,38 @@ def print_adc_to_terminal(adc_values_mean, adc_values_err, channel_nums = [3, 4,
         print("[clx visualize] channel_nums is empty!")
         return
     # check if all the channel numbers are valid
+
+    adc_values_mean_filtered = channel_list_remove_cm_calib(adc_values_mean)
+    adc_values_err_filtered  = channel_list_remove_cm_calib(adc_values_err)
+
     for chn in channel_nums:
-        if chn < 0 or chn >= 38:
-            print(f"[clx visualize] Channel number {chn} is invalid! It should be between 0 and 37.")
+        if chn < 0 or chn >= 36:
+            print(f"[clx visualize] Channel number {chn} is invalid! It should be between 0 and 35.")
             return
     
     for _asic in range(asic_num):
         str_print = f"--A{_asic}: "
         for _half in range(2):
             for _chn in channel_nums:
-                idx = _asic * 76 + _half * 38 + _chn
+                idx = _asic * 72 + _half * 36 + _chn
                 # fixed 4 digit int for mean and 2 digit int for err
-                str_print += f"Ch{_chn+38*_half:02d} {int(adc_values_mean[idx]):3d} "
+                str_print += f"Ch{_chn+36*_half:02d} {int(adc_values_mean_filtered[idx]):3d} "
             str_print += " || "
 
         print(str_print)
 
-def calculate_half_average_adc(adc_values_mean, adc_values_err, asic_num, channel_ignore=[0, 19], channel_dead=[]):
-    # calculate the average adc value for each half of each asic
-    if len(adc_values_err) != len(adc_values_mean):
-        print("[clx visualize] Length of adc_values_err and adc_values_mean do not match!")
-        return [], []
-    if len(adc_values_mean) != 76 * asic_num:
-        print("[clx visualize] Length of adc_values_mean is not equal to 76 * total_asic!")
-        return [], []
-    for chn in channel_ignore:
-        if chn < 0 or chn >= 38:
-            print(f"[clx visualize] Channel number {chn} in channel_ignore is invalid! It should be between 0 and 37.")
-            return [], []
-    
-    half_avg_list   = []
-    half_error_list = []
-
-    for _asic in range(asic_num):
-        for _half in range(2):
-            valid_channel_count = 0
-            adc_sum = 0.0
-            err_sum_sq = 0.0
-
-            adc_list = []
-            err_list = []
-
-            for _chn in range(38):
-                if _chn in channel_ignore:
-                    continue
-                if _chn in channel_dead:
-                    continue
-                idx = _asic * 76 + _half * 38 + _chn
-                x   = adc_values_mean[idx]
-                sx  = adc_values_err[idx]
-
-                adc_sum    += x
-                err_sum_sq += sx ** 2
-                valid_channel_count += 1
-
-                adc_list.append(x)
-                err_list.append(sx)
-
-            if valid_channel_count == 0:
-                half_avg_list.append(0.0)
-                half_error_list.append(0.0)
-                continue
-
-            N = valid_channel_count
-
-            half_avg = adc_sum / N
-            half_avg_list.append(half_avg)
-
-            half_err_meas = (err_sum_sq ** 0.5) / N
-
-            if N > 1:
-                spread_sum_sq = 0.0
-                for x in adc_list:
-                    spread_sum_sq += (x - half_avg) ** 2
-
-                # sigma_spread_for_mean = sqrt( sum (xi - mean)^2 / (N * (N - 1)) )
-                half_err_spread = (spread_sum_sq / (N * (N - 1))) ** 0.5
-            else:
-                half_err_spread = 0.0
-
-            half_error = (half_err_meas ** 2 + half_err_spread ** 2) ** 0.5
-            half_error_list.append(half_error)
-
-    return half_avg_list, half_error_list
-
-
+# * ---------------------------------------------------------------------------
+# * - brief: plot the adc mean values and highlight dead channels
+# * - param:
+# * -   adc_mean_list: [asic_num * 76] measured adc mean values
+# * -   adc_err_list: [asic_num * 76] measured adc mean errors
+# * -   info_str: string to be displayed on the plot
+# * -   dead_channels: list of channel numbers (excluding common-mode and 
+# *     calibration channels)
+# * -   halves_target: list of target adc values for each half [asic_num * 2]
+# * - return:
+# * -   fig, ax: matplotlib figure and axis objects
+# * ---------------------------------------------------------------------------
 def plot_channel_adc(adc_mean_list, adc_err_list, info_str, dead_channels=[], halves_target=[]):
     fig, ax = plt.subplots(1, 1, figsize=(12, 9))
 
@@ -130,10 +85,7 @@ def plot_channel_adc(adc_mean_list, adc_err_list, info_str, dead_channels=[], ha
     )
 
     for ch in dead_channels:
-        ch_removed_cm = single_channel_index_remove_cm_calib(ch)
-        if ch_removed_cm == -1:
-            continue
-        ax.vlines(ch_removed_cm, -50, 1024, color='red', linestyle='--', label=f'Dead channel {ch_removed_cm}')
+        ax.vlines(ch, -50, 1024, color='red', linestyle='--', label=f'Dead channel {ch}')
 
     if len(halves_target) == asic_num * 2:
         for _half in range(asic_num * 2):

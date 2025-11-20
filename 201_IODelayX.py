@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # * --- Set up script information -------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
-script_version_str  = '1.1'
+script_version_str  = '1.2'
 script_folder       = os.path.dirname(__file__)
 print("-- "+ script_id_str + " (v" + script_version_str + ") ----------------")
 print(f"---------------------------------------")
@@ -115,7 +115,7 @@ for _asic in range(total_asic):
     print_result_array = []
     print(f"- Starting IO delay scan for ASIC {_asic}...")
     for _io_delay in io_dealy_scan_range:
-        _is_locked = caliblibX.delay_test(udp_target.cmd_outbound_conn, udp_target.data_cmd_conn, udp_target.board_ip, udp_target.board_port, udp_target.board_id, _delay_setting=_io_delay, _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
+        _is_locked = caliblibX.delay_test(udp_target, _delay_setting=_io_delay, _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
         # print(f"-- IO Delay: {_io_delay:03d}, Locked: {_is_locked}")
         io_delay_scan_io_delay_values[_asic].append(_io_delay)
         io_delay_scan_results[_asic].append(_is_locked)
@@ -138,7 +138,7 @@ for _asic in range(total_asic):
         _segment_lock_status = []
         _segment_print_array = []
         for _io_delay in range(int(_segment[0]), int(_segment[1])):
-            _is_locked = caliblibX.delay_test(udp_target.cmd_outbound_conn, udp_target.data_cmd_conn, udp_target.board_ip, udp_target.board_port, udp_target.board_id, _delay_setting=_io_delay, _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
+            _is_locked = caliblibX.delay_test(udp_target, _delay_setting=_io_delay, _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
             _segment_io_delay_values.append(_io_delay)
             _segment_lock_status.append(_is_locked)
             if _is_locked:
@@ -167,7 +167,7 @@ for _asic in range(total_asic):
 
 # load the optimal io delay settings to ASIC
 for _asic in range(total_asic):
-    _is_locked = caliblibX.delay_test(udp_target.cmd_outbound_conn, udp_target.data_cmd_conn, udp_target.board_ip, udp_target.board_port, udp_target.board_id, _delay_setting=optimal_io_delay_values[_asic], _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
+    _is_locked = caliblibX.delay_test(udp_target, _delay_setting=optimal_io_delay_values[_asic], _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
     if not _is_locked:
         print(f"*** Fatal Error: Optimal IO Delay {optimal_io_delay_values[_asic]} for ASIC {_asic} is not locked! ***")
         exit(1)

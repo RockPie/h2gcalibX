@@ -6,7 +6,7 @@ import numpy as np
 
 # * --- Set up script information -------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
-script_version_str  = '1.3'
+script_version_str  = '1.4'
 script_folder       = os.path.dirname(__file__)
 print("-- "+ script_id_str + " (v" + script_version_str + ") ----------------")
 print(f"---------------------------------------------")
@@ -108,30 +108,19 @@ gen_fcmd_L1A                = 0b01001011
 # - noinv_vref_default: default value for the non-inverted reference voltage
 inv_vref_default    = 512
 noinv_vref_default  = 512
-initial_inv_vref_list   = [inv_vref_default ]  * total_asic * 2
-initial_noinv_vref_list = [noinv_vref_default] * total_asic * 2
 
 # - inputdac_default: default value for the input DAC
 # - pede_trim_default: default value for the pedestal trim
 inputdac_default    = 0
 pede_trim_default   = 31
 
-input_dac_values = [inputdac_default] * 76 * total_asic
-
 # - (DNU) global_scan_range: range for the step 1 - global scan
 # - (DNU) dead_channel_scan_range: range for the step 2 - dead channel scan
 # - (DNU) dead_channel_std_threshold: threshold to determine if a channel is dead
 # global_scan_range           = range(0, 1024, 32)
 global_scan_range           = range(200, 800, 30)
-global_scan_fitting_range   = [100, 500]
-zero_chn_threshold          = 1 # not implemented
 dead_channel_scan_range     = range(0, 64, 8)
 dead_channel_std_threshold  = 10
-
-# - (DNU) inputdac_step_size: step size for the input DAC tunning
-# - (DNU) inputdac_tolerance: tolerance for the input DAC tunning
-inputdac_step_size  = 1
-inputdac_tolerance  = 2
 
 # - (DNU) pede_trim_step_size: step size for the pedestal trim tunning
 # - (DNU) pede_tolerance: tolerance for the pedestal trim tunning
@@ -140,17 +129,17 @@ pede_tolerance      = 2
 pede_trim_attempt_number = 64 // pede_trim_step_size + 1
 pede_trim_coarse_attempt_number = 16 // pede_trim_step_size + 1
 
-# - (DNU) ref_inv_scan_range: range for the inverted reference voltage scan
-ref_inv_scan_range  = range(200, 800, 10)
-
+# - target pedestal value for the global inverted reference voltage scan
 global_coarse_scan_target = 150
 
+# - delay time after setting i2c values before measurement
 delay_after_setting_i2c = 0.1  # seconds
 
-dead_channels = []
 
-best_inv_vref_coarse = []
-best_chn_trim        = []
+# - running result storage
+dead_channels           = []
+best_inv_vref_coarse    = []
+best_chn_trim           = []
 for _asic in range(total_asic):
     _asic_chn_trim = [pede_trim_default] * 72
     best_chn_trim.append(_asic_chn_trim)
@@ -203,10 +192,11 @@ if not caliblibX.send_check_DAQ_gen_params_calib(
 ):
     print("-- Warning: Failed to set DAQ/Gen parameters.")
 
-
 # * --- Global scan of inverted reference voltage ------------------------------
 scan_global_inv_ref_adc_avg = np.zeros((2*total_asic, len(global_scan_range)), dtype=float)
 scan_global_inv_ref_adc_err = np.zeros((2*total_asic, len(global_scan_range)), dtype=float)
+
+scan_global_inv_ref_chn_adc_avg = np.zeros((2*total_asic, 36, len(global_scan_range)), dtype=float)
 
 for _ref_inv in global_scan_range:
     print(f"- Setting Inverted Vref to {_ref_inv}")
@@ -222,9 +212,13 @@ for _ref_inv in global_scan_range:
 
     time.sleep(delay_after_setting_i2c)
     adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
+    adc_mean_list_filtered = caliblibX.channel_list_remove_cm_calib(adc_mean_list)
+    for _asic in range(total_asic):
+        for _chn in range(72):
+            scan_global_inv_ref_chn_adc_avg[2*_asic + (_chn // 36), _chn % 36, global_scan_range.index(_ref_inv)] = adc_mean_list_filtered[_asic * 72 + _chn]
 
     caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
-    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic, dead_channels)
     for _half in range(2*total_asic):
         scan_global_inv_ref_adc_avg[_half, global_scan_range.index(_ref_inv)] = half_avg_list[_half]
         scan_global_inv_ref_adc_err[_half, global_scan_range.index(_ref_inv)] = half_err_list[_half]
@@ -253,9 +247,26 @@ axs_global_inv_coarse.set_xlabel('Inverted Reference Voltage Setting')
 axs_global_inv_coarse.set_ylabel('Average ADC Value')
 axs_global_inv_coarse.legend()
 fig_global_inv_coarse.tight_layout()
-fig_global_inv_coarse_path = os.path.join(output_dump_folder, 'global_inv_ref_scan.png')
+fig_global_inv_coarse_path = os.path.join(output_dump_folder, '00_global_inv_ref_scan.png')
 fig_global_inv_coarse.savefig(fig_global_inv_coarse_path)
 print(f"- Saved global inverted reference voltage scan plot to {fig_global_inv_coarse_path}")
+
+# find dead channels
+dead_channels, channel_rms_values = caliblibX.dead_chn_discrimination(scan_global_inv_ref_chn_adc_avg, dead_channel_std_threshold)
+# draw a hist of the rms values
+fig_dead_chn_rms, ax_dead_chn_rms = plt.subplots(1, 1, figsize=(8, 5))
+ax_dead_chn_rms.hist(channel_rms_values, bins=50, color='blue', alpha=0.7)
+ax_dead_chn_rms.axvline(x=dead_channel_std_threshold, color='r', linestyle='--', label='Dead Channel Threshold')
+ax_dead_chn_rms.set_title('Channel RMS Distribution from Inverted Vref Scan')
+ax_dead_chn_rms.set_xlabel('Channel RMS')
+ax_dead_chn_rms.set_ylabel('Number of Channels')
+ax_dead_chn_rms.legend()
+fig_dead_chn_rms_path = os.path.join(output_dump_folder, '01_dead_channel_rms.png')
+fig_dead_chn_rms.savefig(fig_dead_chn_rms_path)
+print(f"- Saved dead channel RMS distribution plot to {fig_dead_chn_rms_path}")
+
+if dead_channels is not []:
+    print(f"-- Detected dead channels: {dead_channels}")
 
 # set the best inverted reference voltage found
 for _asic in range(total_asic):
@@ -275,12 +286,11 @@ time.sleep(delay_after_setting_i2c)
 adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
 
 caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
-half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic, dead_channels)
 
 fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Coarse Global Inverted Reference Voltage Scan', dead_channels, half_avg_list)
-fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'pede_after_global_inv_scan.png'))
-print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, 'pede_after_global_inv_scan.png')}")
-
+fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, '02_pede_after_global_inv_scan.png'))
+print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, '02_pede_after_global_inv_scan.png')}")
 # * --- Coarse pedestal trim tuning with inverted reference voltage -------------
 
 caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, half_avg_list, pede_tolerance, pede_trim_step_size)
@@ -300,14 +310,14 @@ for _tune_attempt in range(pede_trim_coarse_attempt_number):
     adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
 
     caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
-    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic, dead_channels)
 
     if _tune_attempt < pede_trim_coarse_attempt_number - 1:
         caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, half_avg_list, pede_tolerance, pede_trim_step_size)
     else:
         fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Coarse Pedestal Trim', dead_channels, half_avg_list)
-        fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'coarse_pede_trim.png'))
-        print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, 'coarse_pede_trim.png')}")
+        fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, '03_coarse_pede_trim.png'))
+        print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, '03_coarse_pede_trim.png')}")
 
 # * --- Fine inv_vref scan ---------------------------------------------------
 global_inv_scan_range_min = min(best_inv_vref_coarse) - 20
@@ -336,7 +346,7 @@ for _ref_inv in global_scan_fine:
     adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
 
     caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
-    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic, dead_channels)
     for _half in range(2*total_asic):
         scan_global_inv_ref_adc_avg_fine[_half, global_scan_fine.index(_ref_inv)] = half_avg_list[_half]
         scan_global_inv_ref_adc_err_fine[_half, global_scan_fine.index(_ref_inv)] = half_err_list[_half]
@@ -365,7 +375,7 @@ axs_global_inv_fine.set_xlabel('Inverted Reference Voltage Setting')
 axs_global_inv_fine.set_ylabel('Average ADC Value')
 axs_global_inv_fine.legend()
 fig_global_inv_fine.tight_layout()
-fig_global_inv_fine_path = os.path.join(output_dump_folder, 'global_inv_ref_scan_fine.png')
+fig_global_inv_fine_path = os.path.join(output_dump_folder, '04_global_inv_ref_scan_fine.png')
 fig_global_inv_fine.savefig(fig_global_inv_fine_path)
 print(f"- Saved fine global inverted reference voltage scan plot to {fig_global_inv_fine_path}")
 
@@ -390,8 +400,8 @@ caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
 halves_target_list = [target_pedestal] * 2 * total_asic
 
 fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Fine Inverted Reference Voltage Scan', dead_channels, halves_target_list)
-fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'fine_inv_vref_scan.png'))
-print(f"- Saved pedestal plot after fine inverted reference voltage scan to {os.path.join(output_dump_folder, 'fine_inv_vref_scan.png')}")
+fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, '05_fine_inv_vref_scan.png'))
+print(f"- Saved pedestal plot after fine inverted reference voltage scan to {os.path.join(output_dump_folder, '05_fine_inv_vref_scan.png')}")
 
 # * --- Final fine tune of pedestal trim with inverted reference voltage -----
 caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, halves_target_list, pede_tolerance//2, pede_trim_step_size//2)
@@ -411,14 +421,14 @@ for _tune_attempt in range(pede_trim_attempt_number):
     adc_mean_list, adc_err_list = caliblibX.measure_adc(udp_target, total_asic, machine_gun, expected_event_number, i2c_fragment_life, i2c_retry, _verbose=False)
 
     caliblibX.print_adc_to_terminal(adc_mean_list, adc_err_list)
-    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic)
+    half_avg_list, half_err_list = caliblibX.calculate_half_average_adc(adc_mean_list, adc_err_list, total_asic, dead_channels)
 
     if _tune_attempt < pede_trim_attempt_number - 1:
         caliblibX.tune_chn_trim_inv(best_chn_trim, adc_mean_list, halves_target_list, pede_tolerance//2, pede_trim_step_size//2)
     else:
         fig_pede_after_global_inv, ax_pede_after_global_inv = caliblibX.plot_channel_adc(adc_mean_list, adc_err_list, 'Final Fine Pedestal Trim', dead_channels, halves_target_list)
-        fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, 'final_fine_pede_trim.png'))
-        print(f"- Saved pedestal plot after final fine pedestal trim to {os.path.join(output_dump_folder, 'final_fine_pede_trim.png')}")
+        fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, '06_final_fine_pede_trim.png'))
+        print(f"- Saved pedestal plot after final fine pedestal trim to {os.path.join(output_dump_folder, '06_final_fine_pede_trim.png')}")
 
 # * --- Save final settings -----------------------------------------------
 for _asic in range(total_asic):
