@@ -1,0 +1,377 @@
+import os, json, ast
+from textual.app import ComposeResult
+from textual.widgets import (
+    Header,
+    Footer,
+    Static,
+    ListView,
+    ListItem,
+    ContentSwitcher,
+    OptionList,
+    Button, Label,
+    DirectoryTree,
+    Input,
+    RadioButton,
+    Log,
+    Checkbox,
+    Pretty,
+    ProgressBar
+)
+
+from textual.timer import Timer
+from textual.containers import Horizontal, Vertical, Center, Middle
+from textual.screen import ModalScreen
+from textual.validation import Function, Number, ValidationResult, Validator
+from textual import on
+import asyncio
+from pathlib import Path
+
+from caliblibX.clx_ui_messager import *
+from caliblibX.clx_ui_file_picker import FilePicker, FolderPicker
+
+# ! === 202 PedestalX Page =====================================================
+class Page_202(Static):
+    """Page for 202_PedestalX script."""
+    DEFAULT_CSS = """
+    Page_202 .sub-header {
+        color: $text;
+        text-style: bold;
+        height: 3;
+        padding: 0 1;
+        content-align: center middle;
+        border: solid $accent 50%;
+    }
+    Page_202 #start-pedestal-scan {
+        width: 1fr;
+        content-align: center middle;
+        height: 3;
+    }
+    Page_202 #pedestal-log {
+        height: 1fr;
+        border: solid #778873 50%;
+        margin-top: 2;
+    }
+    Page_202 .value_grid {
+        grid-size: 3;
+        grid-columns: auto 1fr auto;
+        grid-rows: auto;
+        height: auto;
+        align-vertical: middle;
+        padding: 1 1;
+    }
+    Page_202 .value_button {
+        width: 25;
+    }
+    Page_202 .value_label {
+        width: 25;
+    }
+    Page_202 .value_input {
+        width: 25;
+    }
+    Page_202 .value_enable {
+        width: 35;
+        height: 1;
+    }
+    Page_202 .value_display {
+        width: 1fr;
+        text-style: italic;
+        padding-left: 3;
+    }
+    Page_202 ProgressBar Bar {
+        width: 1fr;
+    }
+    """
+    def __init__(self, parent, fpga_id: str, initial_dict=None, **kwargs):
+        super().__init__(**kwargs)
+        self.parent_panel = parent
+        self.fpga_id = fpga_id
+        self.id = f"fpga-{self.fpga_id}-pedestalx"
+        self.target_pedestal = 100  # default
+        self.template_json_path = ""
+        self.rf_value = 0  # default
+        self.cf_value = 0  # default
+        self.cc_value = 0  # default
+        self.cfcomp_value = 0  # default
+        self.rf_enabled = False
+        self.cf_enabled = False
+        self.cc_enabled = False
+        self.cfcomp_enabled = False
+
+        self.settings_compact = True
+
+        if initial_dict is not None:
+            self.load_from_dict(initial_dict)
+
+        self.process_running: bool = False
+        self.process: asyncio.subprocess.Process | None = None
+
+    def save_to_dict(self) -> dict:
+        """Save current settings to a dictionary."""
+        return {
+            "target_pedestal": self.target_pedestal,
+            "template_json_path": self.template_json_path,
+            "rf_value": self.rf_value,
+            "cf_value": self.cf_value,
+            "cc_value": self.cc_value,
+            "cfcomp_value": self.cfcomp_value,
+            "rf_enabled": self.rf_enabled,
+            "cf_enabled": self.cf_enabled,
+            "cc_enabled": self.cc_enabled,
+            "cfcomp_enabled": self.cfcomp_enabled,
+        }
+    def load_from_dict(self, settings: dict) -> None:
+        """Load settings from a dictionary."""
+        self.target_pedestal = settings.get("target_pedestal", self.target_pedestal)
+        self.template_json_path = settings.get("template_json_path", self.template_json_path)
+        self.rf_value = settings.get("rf_value", self.rf_value)
+        self.cf_value = settings.get("cf_value", self.cf_value)
+        self.cc_value = settings.get("cc_value", self.cc_value)
+        self.cfcomp_value = settings.get("cfcomp_value", self.cfcomp_value)
+        self.rf_enabled = settings.get("rf_enabled", self.rf_enabled)
+        self.cf_enabled = settings.get("cf_enabled", self.cf_enabled)
+        self.cc_enabled = settings.get("cc_enabled", self.cc_enabled)
+        self.cfcomp_enabled = settings.get("cfcomp_enabled", self.cfcomp_enabled)
+
+    def compose(self) -> ComposeResult:
+        yield Static("202 PedestalX", classes="sub-header")
+        # --- Setting target pedestal ---
+        yield Horizontal(
+            Label("[b]Target pedestal:[/b]", markup=True, id="target-pedestal-label", classes="value_label"),
+            Label(str(self.target_pedestal), id="target-pedestal-value", expand=True, classes="value_display"),
+            Input(placeholder="Target pedestal", id="target-pedestal-input", classes="value_input", compact=self.settings_compact),
+            id="target-pedestal-grid", classes="value_grid"
+        )
+        # --- Template JSON file selection ---
+        yield Horizontal(
+            Label("[b]Template JSON File:[/b]", markup=True, id="template-json-label", classes="value_label"),
+            Label(self.template_json_path if self.template_json_path else "Not selected", id="template-json-path", expand=True, classes="value_display"),
+            Button("Browse Template JSON", id="browse-template-json", compact=self.settings_compact, classes="value_button"),
+            id="template-json-grid", classes="value_grid"
+        )
+        # --- feedback resistor ---
+        yield Horizontal(
+            Checkbox("[b]Feedback Resistor (RF):[/b]", id="rf-label", classes="value_enable", compact=self.settings_compact, value=self.rf_enabled),
+            Label(str(self.rf_value), id="rf-value", expand=True, classes="value_display"),
+            Input(placeholder="Unit: 10K (0-15)", id="rf-input", classes="value_input", compact=self.settings_compact),
+            id="rf-grid", classes="value_grid"
+        )
+        # --- feedback capacitor ---
+        yield Horizontal(
+            Checkbox("[b]Feedback Capacitor (CF):[/b]", id="cf-label", classes="value_enable", compact=self.settings_compact, value=self.cf_enabled),
+            Label(str(self.cf_value), id="cf-value", expand=True, classes="value_display"),
+            Input(placeholder="Unit: 15fF (0-15)", id="cf-input", classes="value_input", compact=self.settings_compact),
+            id="cf-grid", classes="value_grid"
+        )
+        # --- current conveyor gain ---
+        yield Horizontal(
+            Checkbox("[b]Current Conveyor Gain (CC):[/b]", id="cc-label", classes="value_enable", compact=self.settings_compact, value=self.cc_enabled),
+            Label(str(self.cc_value), id="cc-value", expand=True, classes="value_display"),
+            Input(placeholder="Unit: 0.025 (0-15)", id="cc-input", classes="value_input", compact=self.settings_compact),
+            id="cc-grid", classes="value_grid"
+        )
+        # --- feedback capacitor compensation ---
+        yield Horizontal(
+            Checkbox("[b]CF Compensation (CFComp):[/b]", id="cfcomp-label", classes="value_enable", compact=self.settings_compact, value=self.cfcomp_enabled),
+            Label(str(self.cfcomp_value), id="cfcomp-value", expand=True, classes="value_display"),
+            Input(placeholder="Unit: 15fF (0-15)", id="cfcomp-input", classes="value_input", compact=self.settings_compact),
+            id="cfcomp-grid", classes="value_grid"
+        )
+        
+        yield Log(
+            id="pedestal-log",
+            auto_scroll=True,
+            highlight=True,
+        )
+
+        yield ProgressBar(total=100, id="pedestal-progress-bar", classes="run_progress_bar")
+        yield Button.success("Start Pedestal Scan", id="start-pedestal-scan")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "browse-template-json":
+            self.app.push_screen(
+                FilePicker(start_path=Path("./")),
+                self.on_file_picked
+            )
+
+        elif event.button.id == "start-pedestal-scan":
+            if not self.process_running:
+                self.process_running = True
+                event.button.variant = "error"
+                event.button.label = "Stop Pedestal Scan"
+                asyncio.create_task(self.run_script())
+            else:
+                if self.process is not None and self.process.returncode is None:
+                    self.process.kill()
+                    self.notify("Pedestal Scan terminated by user.", severity="warning")
+                    # reset progress bar
+                    progress_bar = self.query_one("#pedestal-progress-bar", ProgressBar)
+                    progress_bar.update(total=100, progress=0)
+
+    def on_file_picked(self, result: Path | None) -> None:
+        """Callback when FilePicker is dismissed."""
+        if result is None:
+            self.notify("No file selected", severity="warning")
+            self.query_one("#template-json-path", Static).update("Not selected")
+        elif not os.path.isfile(result):
+            self.notify(f"File does not exist: {result}", severity="error")
+            self.query_one("#template-json-path", Static).update("Not selected")
+        else:
+            self.template_json_path = str(result)
+            self.query_one("#template-json-path", Static).update(str(result))
+            self.notify(f"Template JSON file set to: {result}", severity="info")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handle checkbox changes."""
+        if event.checkbox.id == "rf-label":
+            self.rf_enabled = event.value
+            self.notify(f"RF enabled: {self.rf_enabled}", severity="info")
+        elif event.checkbox.id == "cf-label":
+            self.cf_enabled = event.value
+        elif event.checkbox.id == "cc-label":
+            self.cc_enabled = event.value
+        elif event.checkbox.id == "cfcomp-label":
+            self.cfcomp_enabled = event.value
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle target pedestal input submission."""
+        if event.input.id == "target-pedestal-input":
+            try:
+                pedestal = int(event.value)
+                if pedestal < 0 or pedestal > 1023:
+                    self.notify("Target pedestal must be between 0 and 1023", severity="warning")
+                else:
+                    self.target_pedestal = pedestal
+                    pedestal_label = self.query_one("#target-pedestal-value", Label)
+                    pedestal_label.update(str(self.target_pedestal))
+                    self.notify(f"Target pedestal set to {self.target_pedestal}", severity="info")
+                event.input.value = ""
+            except ValueError:
+                self.notify("Invalid target pedestal", severity="error")
+                event.input.value = ""
+        elif event.input.id == "rf-input":
+            try:
+                rf = int(event.value)
+                if rf < 0 or rf > 15:
+                    self.notify("RF value must be between 0 and 15", severity="warning")
+                else:
+                    self.rf_value = rf
+                    rf_label = self.query_one("#rf-value", Label)
+                    rf_label.update(str(self.rf_value))
+                    self.notify(f"RF value set to {self.rf_value}", severity="info")
+                event.input.value = ""
+            except ValueError:
+                self.notify("Invalid RF value", severity="error")
+                event.input.value = ""
+        elif event.input.id == "cf-input":
+            try:
+                cf = int(event.value)
+                if cf < 0 or cf > 15:
+                    self.notify("CF value must be between 0 and 15", severity="warning")
+                else:
+                    self.cf_value = cf
+                    cf_label = self.query_one("#cf-value", Label)
+                    cf_label.update(str(self.cf_value))
+                    self.notify(f"CF value set to {self.cf_value}", severity="info")
+                event.input.value = ""
+            except ValueError:
+                self.notify("Invalid CF value", severity="error")
+                event.input.value = ""
+        elif event.input.id == "cc-input":
+            try:
+                cc = int(event.value)
+                if cc < 0 or cc > 15:
+                    self.notify("CC value must be between 0 and 15", severity="warning")
+                else:
+                    self.cc_value = cc
+                    cc_label = self.query_one("#cc-value", Label)
+                    cc_label.update(str(self.cc_value))
+                    self.notify(f"CC value set to {self.cc_value}", severity="info")
+                event.input.value = ""
+            except ValueError:
+                self.notify("Invalid CC value", severity="error")
+                event.input.value = ""
+        elif event.input.id == "cfcomp-input":
+            try:
+                cfcomp = int(event.value)
+                if cfcomp < 0 or cfcomp > 15:
+                    self.notify("CFComp value must be between 0 and 15", severity="warning")
+                else:
+                    self.cfcomp_value = cfcomp
+                    cfcomp_label = self.query_one("#cfcomp-value", Label)
+                    cfcomp_label.update(str(self.cfcomp_value))
+                    self.notify(f"CFComp value set to {self.cfcomp_value}", severity="info")
+                event.input.value = ""
+            except ValueError:
+                self.notify("Invalid CFComp value", severity="error")
+                event.input.value = ""
+
+    async def run_script(self) -> None:
+        log = self.query_one("#pedestal-log", Log)
+        log.clear()
+        log.write_line("▶ Starting Pedestal Scan ...")
+
+        self.run_cmd = 'python3 -u ./202_PedestalCalibX.py --ui'
+        self.run_cmd += f' -t {self.target_pedestal}'
+
+        if self.template_json_path:
+            self.run_cmd += f' -i {self.template_json_path}'
+
+        self.run_cmd += f' -a {self.parent_panel.asic_num}'
+        self.run_cmd += f' -c {self.parent_panel.udp_config_file}'
+
+        if self.rf_enabled:
+            self.run_cmd += f' --rf {self.rf_value}'
+        if self.cf_enabled:
+            self.run_cmd += f' --cf {self.cf_value}'
+        if self.cc_enabled:
+            self.run_cmd += f' --cc {self.cc_value}'
+        if self.cfcomp_enabled:
+            self.run_cmd += f' --cfcomp {self.cfcomp_value}'
+
+        log.write_line(f"▶ Running command: {self.run_cmd}")
+
+        self.process = await asyncio.create_subprocess_exec(
+            *self.run_cmd.split(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        async def read_stream(stream):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                text = line.decode(errors="ignore").rstrip("\n")
+                # if the line starts with "ui_progress:", update the progress bar
+                if text.startswith("ui_progress:"):
+                    try:
+                        progress_payload = text.split(":", 1)[1].strip().rstrip("%")
+                        progress_value = int(progress_payload)
+                        progress_bar = self.query_one("#pedestal-progress-bar", ProgressBar)
+                        bounded_value = max(0, min(progress_bar.total, progress_value))
+                        progress_bar.update(progress=bounded_value)
+                    except (IndexError, ValueError):
+                        pass
+                else:
+                    log.write_line(text)
+
+        await read_stream(self.process.stdout)
+
+        rc = await self.process.wait()
+
+        self.process_running = False
+        self.process = None
+
+        btn = self.query_one("#start-pedestal-scan", Button)
+        btn.variant = "success"
+        btn.label = "Start Pedestal Scan"
+
+        progress_bar = self.query_one("#pedestal-progress-bar", ProgressBar)
+        progress_bar.update(0)
+
+        if rc == -9:
+            log.write_line("⛔ Pedestal Scan was killed.")
+        else:
+            log.write_line(f"✅ Pedestal Scan finished with exit code {rc}.")
+
+        self.notify("Pedestal Scan finished.", severity="info")

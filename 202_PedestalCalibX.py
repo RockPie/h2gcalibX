@@ -6,7 +6,7 @@ import numpy as np
 
 # * --- Set up script information ---------------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
-script_version_str  = '1.4'
+script_version_str  = '1.5'
 script_folder       = os.path.dirname(__file__)
 script_info_str = "-- " + script_id_str + " (v" + script_version_str + ")"
 while len(script_info_str) < 80:
@@ -27,6 +27,9 @@ parser.add_argument('--rf', type=int, help='Feedback resistor setting (0-15)', d
 parser.add_argument('--cf', type=int, help='Feedback capacitor setting (0-15)', default=0x0a)
 parser.add_argument('--cc', type=int, help='Current conveyor gain setting (0-15)', default=0x04)
 parser.add_argument('--cfcomp', type=int, help='Feedback capacitor compensation setting (0-15)', default=0x0a)
+
+# ui update
+parser.add_argument('--ui', type=bool, help='Enable UI updates during scan', default=False, nargs='?', const=True)
 args = parser.parse_args()
 
 # * --- Load configuration file -----------------------------------------------
@@ -117,6 +120,9 @@ pede_trim_default   = 31
 # - (DNU) dead_channel_std_threshold: threshold to determine if a channel is dead
 # global_scan_range           = range(0, 1024, 32)
 global_scan_range           = range(200, 800, 30)
+global_scan_fine_offset_left    = -20
+global_scan_fine_offset_right   = 100
+global_scan_fine_step       = 5
 dead_channel_scan_range     = range(0, 64, 8)
 dead_channel_std_threshold  = 10
 
@@ -138,6 +144,8 @@ c_f_code = args.cf & 0x0F if args.cf is not None else 0x0F
 cc_gain_code = args.cc & 0x0F if args.cc is not None else 0x0F
 c_f_comp_code = args.cfcomp & 0x0F if args.cfcomp is not None else 0x0F
 
+ui_total_measurements = pede_trim_attempt_number + pede_trim_coarse_attempt_number + len(global_scan_range) + (global_coarse_scan_target - global_scan_fine_offset_left + global_scan_fine_step - 1) // global_scan_fine_step
+
 # - running result storage
 dead_channels           = []
 best_inv_vref_coarse    = []
@@ -147,6 +155,7 @@ for _asic in range(total_asic):
     best_chn_trim.append(_asic_chn_trim)
 best_inv_vref_fine   = []
 
+# 10% from setting i2c
 for _asic in range(total_asic):
     print(f"- Setting I2C for ASIC {_asic}...")
     _asic_i2c_settings = register_settings_list[_asic]
@@ -240,6 +249,10 @@ for _ref_inv in global_scan_range:
     for _half in range(2*total_asic):
         scan_global_inv_ref_adc_avg[_half, global_scan_range.index(_ref_inv)] = half_avg_list[_half]
         scan_global_inv_ref_adc_err[_half, global_scan_range.index(_ref_inv)] = half_err_list[_half]
+
+    if args.ui:
+        current_progress_int = int(100 * global_scan_range.index(_ref_inv) / ui_total_measurements)
+        print(f"ui_progress:{current_progress_int}%")
 
 for _half in range(2*total_asic):
     adc_values = scan_global_inv_ref_adc_avg[_half, :]
@@ -337,14 +350,18 @@ for _tune_attempt in range(pede_trim_coarse_attempt_number):
         fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, '03_coarse_pede_trim.png'))
         print(f"- Saved pedestal plot after global inverted reference voltage scan to {os.path.join(output_dump_folder, '03_coarse_pede_trim.png')}")
 
+    if args.ui:
+        current_progress_int = int(100 * (len(global_scan_range) + _tune_attempt) / ui_total_measurements)
+        print(f"ui_progress:{current_progress_int}%")
+
 # * --- Fine inv_vref scan ---------------------------------------------------
-global_inv_scan_range_min = min(best_inv_vref_coarse) - 20
-global_inv_scan_range_max = max(best_inv_vref_coarse) + 100
+global_inv_scan_range_min = min(best_inv_vref_coarse) - global_scan_fine_offset_left
+global_inv_scan_range_max = max(best_inv_vref_coarse) + global_scan_fine_offset_right
 if global_inv_scan_range_min < 0:
     global_inv_scan_range_min = 0
 if global_inv_scan_range_max > 1023:
     global_inv_scan_range_max = 1023
-global_scan_fine = range(global_inv_scan_range_min, global_inv_scan_range_max, 5)
+global_scan_fine = range(global_inv_scan_range_min, global_inv_scan_range_max, global_scan_fine_step)
 scan_global_inv_ref_adc_avg_fine = np.zeros((2*total_asic, len(global_scan_fine)), dtype=float)
 scan_global_inv_ref_adc_err_fine = np.zeros((2*total_asic, len(global_scan_fine)), dtype=float)
 
@@ -368,6 +385,10 @@ for _ref_inv in global_scan_fine:
     for _half in range(2*total_asic):
         scan_global_inv_ref_adc_avg_fine[_half, global_scan_fine.index(_ref_inv)] = half_avg_list[_half]
         scan_global_inv_ref_adc_err_fine[_half, global_scan_fine.index(_ref_inv)] = half_err_list[_half]
+
+    if args.ui:
+        current_progress_int = int(100 * (len(global_scan_range) + pede_trim_coarse_attempt_number + global_scan_fine.index(_ref_inv)) / ui_total_measurements)
+        print(f"ui_progress:{current_progress_int}%")
 
 for _half in range(2*total_asic):
     adc_values = scan_global_inv_ref_adc_avg_fine[_half, :]
@@ -448,9 +469,16 @@ for _tune_attempt in range(pede_trim_attempt_number):
         fig_pede_after_global_inv.savefig(os.path.join(output_dump_folder, '06_final_fine_pede_trim.png'))
         print(f"- Saved pedestal plot after final fine pedestal trim to {os.path.join(output_dump_folder, '06_final_fine_pede_trim.png')}")
 
+    if args.ui:
+        current_progress_int = int(100 * (len(global_scan_range) + pede_trim_coarse_attempt_number + len(global_scan_fine) + _tune_attempt) / ui_total_measurements)
+        print(f"ui_progress:{current_progress_int}%")
+
 # * --- Save final settings -----------------------------------------------
 for _asic in range(total_asic):
     _asic_i2c_settings = register_settings_list[_asic]
     output_i2c_path = os.path.join(output_dump_folder, f'asic_{_asic}_final_i2c_settings.json')
     _asic_i2c_settings.save_to_json(output_i2c_path)
     print(f"- Saved final I2C settings for ASIC {_asic} to {output_i2c_path}")
+
+if args.ui:
+    print("ui_progress:100%")

@@ -18,6 +18,9 @@ parser.add_argument('-t', '--trigger', action='store_true', help='Set trigger li
 parser.add_argument('-a', '--asic', type=int, help='ASIC number to scan')
 parser.add_argument('-p', '--phase', type=int, default=12, help='Phase setting for the ASIC (default: 12)')
 parser.add_argument('--plot', action='store_true', help='Enable plotting of results')
+
+# ui update
+parser.add_argument('--ui', type=bool, help='Enable UI updates during scan', default=False, nargs='?', const=True)
 args = parser.parse_args()
 
 # * --- Load configuration file ---------------------------------------
@@ -49,6 +52,8 @@ reset_before_scan    = args.reset
 phase_setting        = 12
 if args.phase is not None:
     phase_setting = int(args.phase)
+
+ui_pb_total_steps = len(io_dealy_scan_range) * total_asic + 100 * total_asic  # extra 100 steps for confirming optimal io delay
 
 print(f"- Running parameters:")
 print(f"-- Total ASIC: {total_asic}, ASIC Select: 0x{asic_select:02x}")
@@ -127,6 +132,10 @@ for _asic in range(total_asic):
             print("---A" + str(_asic) + "- " + "".join(print_result_array))
             print_result_array = []
 
+        if args.ui:
+            current_progress = int(100 * (_io_delay // 2 + _asic * len(io_dealy_scan_range)) / ui_pb_total_steps)
+            print(f"ui_progress:{current_progress}%")
+
     # find the 3 longest locked segments
     top_segments = caliblibX.find_top_n_ones(io_delay_scan_io_delay_values[_asic], io_delay_scan_results[_asic], 3)
 
@@ -165,6 +174,10 @@ for _asic in range(total_asic):
             optimal_io_delay_values.append(-1)
             print(f" -- Warning: No valid optimal IO delay found for ASIC {_asic}!")
 
+    if args.ui:
+        current_progress = int(100 * (len(io_dealy_scan_range) + _asic * len(io_dealy_scan_range)) / ui_pb_total_steps)
+        print(f"ui_progress:{current_progress}%")
+
 # load the optimal io delay settings to ASIC
 for _asic in range(total_asic):
     _is_locked = caliblibX.delay_test(udp_target, _delay_setting=optimal_io_delay_values[_asic], _asic_index=_asic, _asic_sel=asic_select, _locked_pattern=locked_pattern, _test_trigger_lines=enable_trigger_lines)
@@ -198,4 +211,7 @@ with open(os.path.join(output_dump_folder, 'io_delay_scan_config.json'), 'w') as
     json.dump(output_config_json, f, indent=4)
 
 del udp_target
+if args.ui:
+    current_progress = 100
+    print(f"ui_progress:{current_progress}%")
 print("-- End of Script ----------------------")

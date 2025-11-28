@@ -11,6 +11,7 @@ from textual.widgets import (
 from textual.containers import Horizontal, Vertical
 import caliblibX
 import contextlib
+import configparser, os
 
 class CalibX(App):
     """H2GCalibX"""
@@ -70,6 +71,40 @@ class CalibX(App):
         self._tab_counter = 0
         self.pool_process = None
         self.pool_task = None
+
+        # Check if any ini file exists for the App settings
+        self.config = configparser.ConfigParser()
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        ini_path = os.path.join(script_dir, 'caliblibX.ini')
+        if os.path.exists(ini_path):
+            self.config.read(ini_path)
+        else:
+            # create a default config if none exists, so no tab
+            self.config['APP_SETTINGS'] = {}
+
+    async def save_config(self):
+        """Save current application configuration to ini file."""
+        # clean existing FPGA sections
+        for section in self.config.sections():
+            if section.startswith('FPGA_'):
+                self.config.remove_section(section)
+        # Gather current settings
+        tabs = self.query_one("#fpga-tabs", TabbedContent)
+        for idx, pane in enumerate(tabs.query(TabPane), start=1):
+            try:
+                fpga_panel: caliblibX.FpgaPanel = pane.query_one(caliblibX.FpgaPanel)
+                # print info for debugging
+                print(f"Saving config for tab {pane.id}: {fpga_panel.fpga_name}, {fpga_panel.asic_num}, {fpga_panel.udp_config_file}")
+                self.config[f'FPGA_{idx}'] = fpga_panel.save_to_dict()
+            except Exception as e:
+                print(f"Error saving config for tab {pane.id}: {e}")
+
+        # Write to ini file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        ini_path = os.path.join(script_dir, 'caliblibX.ini')
+        with open(ini_path, 'w') as configfile:
+            self.config.write(configfile)
+
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -139,22 +174,31 @@ class CalibX(App):
             # caliblibX.close_socket_pool(log)
         
     async def on_mount(self):
-        await self.add_fpga_tab()
-        await self.add_fpga_tab()
+        # await self.add_fpga_tab()
+        # await self.add_fpga_tab()
+        if self.config.sections():
+            # Load FPGA tabs from config
+            for section in self.config.sections():
+                if section.startswith('FPGA_'):
+                    fpga_settings = self.config[section]
+                    fpga_name = fpga_settings.get('fpga_name', '')
+                    fpga_id   = fpga_settings.get('fpga_id', '')
+                    await self.add_fpga_tab(fpga_name, fpga_id, initial_dict=fpga_settings)
         self.pool_process: asyncio.subprocess.Process | None = None
         self.pool_task: asyncio.Task | None = None
 
     async def action_add_tab(self):
         await self.add_fpga_tab()
 
-    async def add_fpga_tab(self):
+    async def add_fpga_tab(self, fpga_name: str = "", fpga_id: str = "", initial_dict: dict = None):
         self._tab_counter += 1
-        fpga_name = f"FPGA {self._tab_counter}"
-        fpga_id   = f"fpga-{self._tab_counter}"
+        if not fpga_name or not fpga_id:
+            fpga_name = f"FPGA {self._tab_counter}"
+            fpga_id   = f"fpga-{self._tab_counter}"
 
         top_tabs = self.query_one("#fpga-tabs", TabbedContent)
 
-        panel = caliblibX.FpgaPanel(self, fpga_name, fpga_id)
+        panel = caliblibX.FpgaPanel(self, fpga_name, fpga_id, initial_dict=initial_dict)
 
         pane = TabPane(fpga_name, panel, id=fpga_id)
         await top_tabs.add_pane(pane)
@@ -196,6 +240,8 @@ class CalibX(App):
 
     async def action_quit(self) -> None:
         """Q to quit the app."""
+        # Save config before quitting
+        await self.save_config()
         await self._stop_socket_pool()
         self.exit()
 
