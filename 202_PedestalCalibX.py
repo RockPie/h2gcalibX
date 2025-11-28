@@ -4,27 +4,36 @@ import matplotlib.pyplot as plt
 import termplotlib as tpl
 import numpy as np
 
-# * --- Set up script information -------------------------------------
+# * --- Set up script information ---------------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
 script_version_str  = '1.4'
 script_folder       = os.path.dirname(__file__)
-print("-- "+ script_id_str + " (v" + script_version_str + ") ----------------")
-print(f"---------------------------------------------")
+script_info_str = "-- " + script_id_str + " (v" + script_version_str + ")"
+while len(script_info_str) < 80:
+    script_info_str += "-"
+print(script_info_str)
+print("------------------------------------------------------------------------")
 
-# * --- Read command line arguments -----------------------------------
+# * --- Read command line arguments -------------------------------------------
 parser = argparse.ArgumentParser(description='IO delay scan for HGCROC')
 parser.add_argument('-i', '--i2c', type=str, help='Path to the I2C settings JSON file')
 parser.add_argument('-c', '--config', type=str, help='Path to the common settings JSON file')
-parser.add_argument('-t', '--target', type=int, help='Target pedestal value')
+parser.add_argument('-t', '--target', type=int, help='Target pedestal value', default=50)
 parser.add_argument('-a', '--asic', type=int, help='ASIC number to scan')
 parser.add_argument('-o', '--output', type=str, help='Output folder name')
+
+# analog settings
+parser.add_argument('--rf', type=int, help='Feedback resistor setting (0-15)', default=0x08)
+parser.add_argument('--cf', type=int, help='Feedback capacitor setting (0-15)', default=0x0a)
+parser.add_argument('--cc', type=int, help='Current conveyor gain setting (0-15)', default=0x04)
+parser.add_argument('--cfcomp', type=int, help='Feedback capacitor compensation setting (0-15)', default=0x0a)
 args = parser.parse_args()
 
-# * --- Load configuration file ---------------------------------------
+# * --- Load configuration file -----------------------------------------------
 output_dump_folder, output_config_path = caliblibX.output_path_setup(script_id_str, time.strftime('%Y%m%d_%H%M%S'), os.path.dirname(__file__))
 output_config_json = {}
 
-# * --- Load udp settings from config file ----------------------------
+# * --- Load udp settings from config file ------------------------------------
 udp_target = caliblibX.udp_target('10.1.2.207', 11000, 11001, '10.1.2.208', 11000)
 if args.config:
     udp_target.load_udp_json_file(args.config)
@@ -36,12 +45,12 @@ print(f"-- Board IP: {udp_target.board_ip}, Port: {udp_target.board_port}")
 
 udp_target.connect_to_pool(timeout=0.1)
 
-# * --- Set running parameters --------------------------------------
+# * --- Set running parameters ------------------------------------------------
 total_asic = 2
 if args.asic is not None:
     total_asic = int(args.asic)
 
-# * --- Load I2C settings from file ------------------------------------
+# * --- Load I2C settings from file -------------------------------------------
 i2c_settings = {}
 if args.i2c:
     i2c_files = args.i2c.split(',')
@@ -49,7 +58,7 @@ if len(i2c_files) != total_asic and len(i2c_files) != 1:
     print(f"Error: Number of I2C files provided ({len(i2c_files)}) does not match number of ASICs to scan ({total_asic}).")
     exit()
 
-# * --- Create base I2C settings ---------------------------------
+# * --- Create base I2C settings ----------------------------------------------
 register_settings_list = []
 if len(i2c_files) == total_asic:
     for asic_idx in range(total_asic):
@@ -75,32 +84,21 @@ else:
             exit()
     print("- Using the same I2C settings for all ASICs")
 
-# * --- Set running parameters --------------------------------------
+# * --- Set running parameters ------------------------------------------------
 target_pedestal = 100
 if args.target is not None:
     target_pedestal = int(args.target)
 
 print(f"- Target pedestal value: {target_pedestal}")
 
-# - i2c_retry: number of retries for i2c communication
-# - (DNU) i2c_fragment_life: number of fragments to wait for a complete event
-i2c_retry               = 30
-i2c_fragment_life       = 3
-
-# - machine_gun: number of samples to take for every cycle, recommend to keep under 20,
-#                0 means 1 sample per cycle
-# - phase_setting: phase setting for the ASIC clock (0 - 15)
-machine_gun             = 10
-phase_setting           = 12
-
-# - gen_nr_cycle: number of cycles to run the generator
-# - (DNU) gen_interval_value: interval value for the generator
-gen_nr_cycle            = 1
-gen_interval_value      = 255
-expected_event_number   = gen_nr_cycle * (machine_gun + 1)
-
-# - (DNU) gen_fcmd_internal_injection: fast command for internal injection
-# - (DNU) gen_fcmd_L1A: fast command for L1A request
+# - generator settings
+i2c_retry                   = 30
+i2c_fragment_life           = 3
+machine_gun                 = 10
+phase_setting               = 12
+gen_nr_cycle                = 1
+gen_interval_value          = 255
+expected_event_number       = gen_nr_cycle * (machine_gun + 1)
 gen_fcmd_internal_injection = 0b00101101
 gen_fcmd_L1A                = 0b01001011
 
@@ -135,6 +133,10 @@ global_coarse_scan_target = 150
 # - delay time after setting i2c values before measurement
 delay_after_setting_i2c = 0.1  # seconds
 
+r_f_code = args.rf & 0x0F if args.rf is not None else 0x0F
+c_f_code = args.cf & 0x0F if args.cf is not None else 0x0F
+cc_gain_code = args.cc & 0x0F if args.cc is not None else 0x0F
+c_f_comp_code = args.cfcomp & 0x0F if args.cfcomp is not None else 0x0F
 
 # - running result storage
 dead_channels           = []
@@ -148,6 +150,19 @@ best_inv_vref_fine   = []
 for _asic in range(total_asic):
     print(f"- Setting I2C for ASIC {_asic}...")
     _asic_i2c_settings = register_settings_list[_asic]
+    if not _asic_i2c_settings.set_cf(c_f_code, 0):
+        raise ValueError("Failed to set CF 0x0a to 0")
+    if not _asic_i2c_settings.set_cf(c_f_code, 1):
+        raise ValueError("Failed to set CF 0x0a to 1")
+    if not _asic_i2c_settings.set_cf_comp(c_f_comp_code, 0):
+        raise ValueError("Failed to set CF_COMP 0x0a to 0")
+    if not _asic_i2c_settings.set_cf_comp(c_f_comp_code, 1):
+        raise ValueError("Failed to set CF_COMP 0x0a to 1")
+    if not _asic_i2c_settings.set_rf(r_f_code, 0):
+        raise ValueError("Failed to set RF 0x0c to 0")
+    if not _asic_i2c_settings.set_rf(r_f_code, 1):
+        raise ValueError("Failed to set RF 0x0c to 1")
+    
     if not _asic_i2c_settings.set_inputdac_all(inputdac_default):
         print(f"Error: Failed to set Input DAC for ASIC {_asic}.")
     if not _asic_i2c_settings.set_chn_trim_inv_all(best_chn_trim[_asic]):
@@ -160,6 +175,9 @@ for _asic in range(total_asic):
         print(f"Error: Failed to set Non-Inverted Vref 0 for ASIC {_asic}.")
     if not _asic_i2c_settings.set_noinv_vref(noinv_vref_default, 1):
         print(f"Error: Failed to set Non-Inverted Vref 1 for ASIC {_asic}.")
+
+    _asic_i2c_settings.set_gain_conv(cc_gain_code)
+
     _asic_i2c_settings.set_phase(phase_setting)
     _asic_i2c_settings.turn_on_daq()
     _asic_i2c_settings.send_all_registers(udp_target)

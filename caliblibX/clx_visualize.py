@@ -117,7 +117,7 @@ def plot_channel_adc(adc_mean_list, adc_err_list, info_str, dead_channels=[], ha
     )
     return fig, ax
 
-def Draw2DIM(_title, _x_label, _y_label, _total_asic, _data, _saving_path, _y_ticks=None, _turn_on_points=None, _data_saving_path=None):
+def Draw2DIM(_title, _x_label, _y_label, _total_asic, _data, _saving_path, _y_ticks=None, _turn_on_points=None, _data_saving_path=None, _image_saving_path=None):
     if _data_saving_path is not None:
         pd.DataFrame(_data).to_csv(_data_saving_path, index=False, header=False)
 
@@ -151,6 +151,9 @@ def Draw2DIM(_title, _x_label, _y_label, _total_asic, _data, _saving_path, _y_ti
 
     ax.text(0.02, 0.96, _title, transform=ax.transAxes, fontsize=18,
             verticalalignment='top', weight='bold', color='white')
+
+    if _image_saving_path is not None:
+        fig.savefig(_image_saving_path)
 
     return fig, ax
     

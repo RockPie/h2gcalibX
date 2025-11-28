@@ -15,6 +15,8 @@ import contextlib
 class CalibX(App):
     """H2GCalibX"""
 
+    ENABLE_WEB = True
+
     CSS = """
     Screen {
         layout: vertical;
@@ -167,16 +169,13 @@ class CalibX(App):
         active_id = top_tabs.active
         if not active_id:
             return
-
         await top_tabs.remove_pane(active_id)
-
     
     async def _stop_socket_pool(self) -> None:
         proc = self.pool_process
         task = self.pool_task
 
         if proc and proc.returncode is None:
-            # 先发 terminate，再等一会儿，不行再 kill
             try:
                 proc.terminate()
                 try:
@@ -185,7 +184,6 @@ class CalibX(App):
                     proc.kill()
                     await proc.wait()
             except ProcessLookupError:
-                # 进程已经没了
                 pass
 
         self.pool_process = None
@@ -197,7 +195,7 @@ class CalibX(App):
             self.pool_task = None
 
     async def action_quit(self) -> None:
-        """Ctrl+Q 退出前，先把 SocketPool 干净地停掉。"""
+        """Q to quit the app."""
         await self._stop_socket_pool()
         self.exit()
 

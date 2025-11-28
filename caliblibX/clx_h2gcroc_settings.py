@@ -30,6 +30,7 @@ class h2gcroc_registers_full:
         # if is top, get 0:8
         if "Top" in reg_key:
             register_data = register_data[0:8]
+        # print("sending to asic:", self.target_asic.get("ASIC Address", 0), " register:", reg_key.ljust(self._register_key_width), " data:", " ".join(f"{b:02x}" for b in register_data))
         return send_register_calib(udp_target, self.target_asic.get("ASIC Address", 0), reg_key, register_data, retry=retry, verbose=verbose)
 
     def send_top_register(self, udp_target, retry=3, verbose=False):
@@ -112,18 +113,8 @@ class h2gcroc_registers_full:
                 int(self.udp_settings.get("Port")) == udp_target.board_port and
                 self.target_asic.get("FPGA Address") == udp_target.board_id and
                 self.target_asic.get("ASIC Address") == asic_index)
-    
-    def set_phase(self, phase_value):
-        if phase_value < 0 or phase_value > 15:
-            print_err("Phase value must be between 0 and 255")
-            return False
-        try:
-            top_reg = self.register_settings["Top"]
-            top_reg[7] = phase_value & 0x0F
-        except KeyError:
-            print_err("Top register not found in settings")
-            return False
-        
+
+    # * --- Channel Settings --- *
     def set_inputdac_all(self, input_dac_value):
         if input_dac_value < 0 or input_dac_value > 63:
             print_err("Input DAC value must be between 0 and 63")
@@ -163,7 +154,142 @@ class h2gcroc_registers_full:
             if not self.set_chn_trim_inv(ch_index, trim_value):
                 return False
         return True
+
+    def set_chn_trim_toa(self, channel_index, trim_value):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        if trim_value < 0 or trim_value > 63:
+            print_err("Trim value must be between 0 and 63")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            ch_reg[1] = (ch_reg[1] & 0x03) | ((trim_value & 0x3F) << 2)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
     
+    def set_chn_trim_tot(self, channel_index, trim_value):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        if trim_value < 0 or trim_value > 63:
+            print_err("Trim value must be between 0 and 63")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            ch_reg[2] = (ch_reg[2] & 0x03) | ((trim_value & 0x3F) << 2)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_chn_lowrange(self, channel_index, enable=True):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            if enable:
+                ch_reg[4] = ch_reg[4] | 0x02
+                # ch_reg[4] = ch_reg[4] & (~0x04)
+            else:
+                ch_reg[4] = ch_reg[4] & (~0x02)
+                # ch_reg[4] = ch_reg[4] | 0x04
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_chn_highrange(self, channel_index, enable=True):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            if enable:
+                ch_reg[4] = ch_reg[4] | 0x04
+                # ch_reg[4] = ch_reg[4] & (~0x02)
+            else:
+                ch_reg[4] = ch_reg[4] & (~0x04)
+                # ch_reg[4] = ch_reg[4] | 0x02
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_chn_sign_dac(self, channel_index, sign_dac_value=True):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            if sign_dac_value:
+                ch_reg[14] = ch_reg[14] | 0x40
+            else:
+                ch_reg[14] = ch_reg[14] & (~0x40)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_chn_gain_conv2(self, channel_index, gain_value=True):
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            if gain_value:
+                ch_reg[14] = ch_reg[14] | 0x80
+            else:
+                ch_reg[14] = ch_reg[14] & (~0x80)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_chn_gain_conv1(self, channel_index, gain_value=True):
+        # bit7 of reg#0
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            if gain_value:
+                ch_reg[0] = ch_reg[0] | 0x80
+            else:
+                ch_reg[0] = ch_reg[0] & (~0x80)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_chn_gain_conv0(self, channel_index, gain_value=True):
+        # bit6 of reg#0
+        if channel_index < 0 or channel_index > 71:
+            print_err("Channel index must be between 0 and 71")
+            return False
+        reg_key = f"Channel_{channel_index}"
+        try:
+            ch_reg = self.register_settings[reg_key]
+            if gain_value:
+                ch_reg[0] = ch_reg[0] | 0x40
+            else:
+                ch_reg[0] = ch_reg[0] & (~0x40)
+        except KeyError:
+            print_err(f"Channel register {reg_key} not found in settings")
+            return False
+        return True
+    
+    # * --- Reference Voltage Settings --- *
     def set_inv_vref(self, vref_value, half_index):
         if vref_value < 0 or vref_value > 1023:
             print_err("VREF value must be between 0 and 1023")
@@ -201,7 +327,294 @@ class h2gcroc_registers_full:
             print_err(f"Reference Voltage register {reg_key} not found in settings")
             return False
         return True
-        
+    
+    def set_toa_vref(self, vref_value, half_index):
+        if vref_value < 0 or vref_value > 1023:
+            print_err("VREF value must be between 0 and 1023")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            vref_reg = self.register_settings[reg_key]
+            # bit 9-2 in reg#3
+            vref_reg[3] = (vref_value & 0xFC) >> 2
+            # bit 1-0 in reg#1 bit 5-4
+            vref_reg[1] = (vref_reg[1] & 0xCF) | ((vref_value & 0x03) << 4)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_tot_vref(self, vref_value, half_index):
+        if vref_value < 0 or vref_value > 1023:
+            print_err("VREF value must be between 0 and 1023")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            vref_reg = self.register_settings[reg_key]
+            # bit 9-2 in reg#2
+            vref_reg[2] = (vref_value & 0xFC) >> 2
+            # bit 1-0 in reg#1 bit 7-6
+            vref_reg[1] = (vref_reg[1] & 0x3F) | ((vref_value & 0x03) << 6)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_12b_dac(self, dac_value, half_index):
+        if dac_value < 0 or dac_value > 4095:
+            print_err("12b DAC value must be between 0 and 4095")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            reference_reg = self.register_settings[reg_key]
+            # lower 8 bits to reg#6
+            reference_reg[6] = dac_value & 0xFF
+            # upper 4 bits to reg#7
+            reference_reg[7] = (reference_reg[7] & 0xF0) | ((dac_value >> 8) & 0x0F)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_12b_dac_2v5(self, dac_value, half_index):
+        # 12-bit value, reg# 9 for bit7-0, reg#10 bit 3-0 for bit 11-8
+        if dac_value < 0 or dac_value > 4095:
+            print_err("12b DAC value must be between 0 and 4095")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            reference_reg = self.register_settings[reg_key]
+            # lower 8 bits to reg#9
+            reference_reg[9] = dac_value & 0xFF
+            # upper 4 bits to reg#10
+            reference_reg[10] = (reference_reg[10] & 0xF0) | ((dac_value >> 8) & 0x0F)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_intctest(self, enable, half_index):
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            reference_reg = self.register_settings[reg_key]
+            if enable:
+                reference_reg[7] = reference_reg[7] | 0x40
+                reference_reg[7] = reference_reg[7] & (~0x80)
+            else:
+                reference_reg[7] = reference_reg[7] & (~0x40)
+                reference_reg[7] = reference_reg[7] | 0x80
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_extctest(self, enable, half_index):
+        self.set_intctest(not enable, half_index)
+
+    def set_extctest_2v5(self, enable, half_index):
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            reference_reg = self.register_settings[reg_key]
+            if enable:
+                reference_reg[10] = reference_reg[10] | 0x20
+            else:
+                reference_reg[10] = reference_reg[10] & (~0x20)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_choice_cinj(self, use_cinj, half_index):
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Reference_Voltage_{half_index}"
+        try:
+            reference_reg = self.register_settings[reg_key]
+            if use_cinj:
+                reference_reg[10] = reference_reg[10] | 0x40
+            else:
+                reference_reg[10] = reference_reg[10] & (~0x40)
+        except KeyError:
+            print_err(f"Reference Voltage register {reg_key} not found in settings")
+            return False
+        return True
+    
+    # * --- Global Analog Settings --- *
+
+    def set_gain_conv3(self, gain_value, half_index):
+        # 1-bit value, bit7 of reg#0
+        if gain_value not in [0, 1]:
+            print_err("Gain conv3 value must be 0 or 1")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            if gain_value == 1:
+                ga_reg[0] = ga_reg[0] | 0x80
+            else:
+                ga_reg[0] = ga_reg[0] & (~0x80)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+
+    def set_cf_comp(self, comp_value, half_index):
+        # 4-bit value
+        if comp_value < 0 or comp_value > 15:
+            print_err("Comp value must be between 0 and 15")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            ga_reg[8] = (ga_reg[8] & 0x0F) | ((comp_value & 0x0F) << 4)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_cf(self, cf_value, half_index):
+        # 4-bit value
+        if cf_value < 0 or cf_value > 15:
+            print_err("CF value must be between 0 and 15")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            ga_reg[9] = (ga_reg[9] & 0xF0) | (cf_value & 0x0F)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_rf(self, rf_value, half_index):
+        # 4-bit value
+        if rf_value < 0 or rf_value > 15:
+            print_err("RF value must be between 0 and 15")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            ga_reg[9] = (ga_reg[9] & 0x0F) | ((rf_value & 0x0F) << 4)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_s_sk(self, s_sk_value, half_index):
+        # 3-bit value, bit 7-5 for reg#10
+        if s_sk_value < 0 or s_sk_value > 7:
+            print_err("S_sk value must be between 0 and 7")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            ga_reg[10] = (ga_reg[10] & 0x1F) | ((s_sk_value & 0x07) << 5)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_delay87(self, delay_value, half_index):
+        # 3-bit value, bit 4-2 of reg#14
+        if delay_value < 0 or delay_value > 7:
+            print_err("Delay87 value must be between 0 and 7")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            ga_reg[14] = (ga_reg[14] & 0xE3) | ((delay_value & 0x07) << 2)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+    
+    def set_delay9(self, delay_value, half_index):
+        # 3-bit value, bit 7-5 of reg#14
+        if delay_value < 0 or delay_value > 7:
+            print_err("Delay9 value must be between 0 and 7")
+            return False
+        if half_index not in [0, 1]:
+            print_err("Half index must be 0 or 1")
+            return False
+        reg_key = f"Global_Analog_{half_index}"
+        try:
+            ga_reg = self.register_settings[reg_key]
+            ga_reg[14] = (ga_reg[14] & 0x1F) | ((delay_value & 0x07) << 5)
+        except KeyError:
+            print_err(f"Global Analog register {reg_key} not found in settings")
+            return False
+        return True
+    
+
+    # * --- Digital Half Settings --- *
+    def set_bx_offset(self, bx_offset_value, half_index):
+        # 12-bit value
+        if bx_offset_value < 0 or bx_offset_value > 4095:
+            print_err("BX offset value must be between 0 and 4095")
+            return False
+        try:
+            dh_reg = self.register_settings[f"Digital_Half_{half_index}"]
+            dh_reg[25] = bx_offset_value & 0xFF
+            dh_reg[26] = (dh_reg[26] & 0xF0) | ((bx_offset_value >> 8) & 0x0F)
+        except KeyError:
+            print_err(f"Digital Half register Digital_Half_{half_index} not found in settings")
+            return False
+        return True
+    
+    def set_calibrationsc(self, calib_scale_value, half_index):
+        # 1-bit value of bit 6 of register 4
+        if calib_scale_value not in [0, 1]:
+            print_err("Calibration scale value must be 0 or 1")
+            return False
+        try:
+            dh_reg = self.register_settings[f"Digital_Half_{half_index}"]
+            if calib_scale_value == 1:
+                dh_reg[4] = dh_reg[4] | 0x40
+            else:
+                dh_reg[4] = dh_reg[4] & (~0x40)
+        except KeyError:
+            print_err(f"Digital Half register Digital_Half_{half_index} not found in settings")
+            return False
+        return True
+
+    # * --- Top Settings --- *
     def turn_on_daq(self, enable=True):
         try:
             top_reg = self.register_settings["Top"]
@@ -213,9 +626,52 @@ class h2gcroc_registers_full:
             print_err("Top register not found in settings")
             return False
         return True
-        
+    
     def turn_off_daq(self, disable=True):
         return self.turn_on_daq(not disable)
+    
+    def set_phase(self, phase_value):
+        if phase_value < 0 or phase_value > 15:
+            print_err("Phase value must be between 0 and 255")
+            return False
+        try:
+            top_reg = self.register_settings["Top"]
+            top_reg[7] = phase_value & 0x0F
+        except KeyError:
+            print_err("Top register not found in settings")
+            return False
+        return True
+    
+    # * --- Combined Methods --- *
+    def set_gain_conv(self, gain_value):
+        # set bit0-3 to every channel   
+        if gain_value < 0 or gain_value > 15:
+            print_err("Gain value must be between 0 and 15")
+            return False
+        _gain_conv0 = (gain_value >> 0) & 0x01
+        _gain_conv1 = (gain_value >> 1) & 0x01
+        _gain_conv2 = (gain_value >> 2) & 0x01
+        _gain_conv3 = (gain_value >> 3) & 0x01
+        for ch_index in range(72):
+            if not self.set_chn_gain_conv0(ch_index, _gain_conv0):
+                return False
+            if not self.set_chn_gain_conv1(ch_index, _gain_conv1):
+                return False
+            if not self.set_chn_gain_conv2(ch_index, _gain_conv2):
+                return False
+        for half_index in [0, 1]:
+            if not self.set_gain_conv3(_gain_conv3, half_index):
+                return False
+        return True
+    
+    def print_reg(self, reg_key):
+        if reg_key not in self.register_settings:
+            print_err(f"Register key {reg_key} not found in settings")
+            return
+        register_data = self.register_settings[reg_key]
+        hex_str = " ".join(f"{b:02x}" for b in register_data)
+        print(f"Register {reg_key}: {hex_str}")
+        
 
     def load_from_json(self, json_file):
         try:

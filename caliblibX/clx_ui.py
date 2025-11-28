@@ -447,6 +447,23 @@ class Page_202(Static):
             self.query_one("#template-json-path", Static).update(str(result))
             self.notify(f"Template JSON file set to: {result}", severity="info")
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle target pedestal input submission."""
+        if event.input.id == "target-pedestal-input":
+            try:
+                pedestal = int(event.value)
+                if pedestal < 0 or pedestal > 1023:
+                    self.notify("Target pedestal must be between 0 and 1023", severity="warning")
+                else:
+                    self.target_pedestal = pedestal
+                    pedestal_label = self.query_one("#target-pedestal-value", Label)
+                    pedestal_label.update(str(self.target_pedestal))
+                    self.notify(f"Target pedestal set to {self.target_pedestal}", severity="info")
+                event.input.value = ""
+            except ValueError:
+                self.notify("Invalid target pedestal", severity="error")
+                event.input.value = ""
+
     async def run_script(self) -> None:
         # clear log
         log = self.query_one("#pedestal-log", Log)
@@ -677,6 +694,11 @@ class FpgaPanel(Static):
         self.fpga_id = fpga_id
         self.asic_num = 2  # default
         self.udp_config_file = ""
+
+        self.rf = 0  # 4-bit from 0b0000 to 0b1111, feedback resistor
+        self.cf = 0  # 4-bit from 0b0000 to 0b1111, feedback capacitor
+        self.cc = 0  # 4-bit from 0b0000 to 0b1111, current conveyor gain
+        self.cfcomp = 0  # 4-bit from 0b0000 to 0b1111, feedback capacitor compensation
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="fpga-row"):

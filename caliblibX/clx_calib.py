@@ -8,6 +8,8 @@ from collections import deque
 from collections import OrderedDict
 import packetlib
 from .clx_udp import udp_target
+from .clx_data import single_channel_index_remove_cm_calib
+import copy
 
 color_list = ['#FF0000', '#0000FF', '#FFFF00', '#00FF00','#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008080', '#FFC0CB']
 
@@ -179,8 +181,7 @@ def setup_output(script_id_str, args_output=None, dump_root='dump'):
         'output_config_json': output_config_json_name,
     }
 
-def measure_all(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragment_life,
-                _retry=1, _verbose=False, _focus_half=[]):
+def measure_all(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragment_life, _retry=1, _verbose=False, _focus_half=[]):
     _cmd_socket  = _udp_target.cmd_outbound_conn
     _data_socket = _udp_target.data_data_conn
     _h2gcroc_ip  = _udp_target.board_ip
@@ -471,818 +472,6 @@ def measure_all(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragm
         # arrays are already initialized as zeros
 
     return adc_mean_list, adc_err_list, tot_mean_list, tot_err_list, toa_mean_list, toa_err_list
-
-# def measure_all_bkp(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragment_life, _retry=1, _verbose=False, _focus_half=[]):
-#     _cmd_socket  = _udp_target.cmd_outbound_conn
-#     _data_socket = _udp_target.data_data_conn
-#     _h2gcroc_ip  = _udp_target.board_ip
-#     _h2gcroc_port= _udp_target.board_port
-#     _fpga_addr   = _udp_target.board_id
-
-#     _retry_left = _retry
-#     _all_events_received = False
-
-#     n_channels = _total_asic_num * 76
-#     n_halves   = _total_asic_num * 2
-#     chunks_per_event = n_halves
-
-#     BC_PER_SHOT = 164
-
-#     adc_mean_list = np.zeros((_machine_gun+1, n_channels))
-#     adc_err_list  = np.zeros((_machine_gun+1, n_channels))
-#     tot_mean_list = np.zeros((_machine_gun+1, n_channels))
-#     tot_err_list  = np.zeros((_machine_gun+1, n_channels))
-#     toa_mean_list = np.zeros((_machine_gun+1, n_channels))
-#     toa_err_list  = np.zeros((_machine_gun+1, n_channels))
-    
-#     while _retry_left > 0 and not _all_events_received:
-#         if _retry_left < _retry:
-#             if _verbose:
-#                 print_info(f"Retrying measurement, attempts left: {_retry_left}")
-#             time.sleep(0.1)
-#         _retry_left -= 1
-
-#         try:
-#             extracted_payloads_pool = deque()
-#             event_fragment_pool     = []
-
-#             timestamps_events = []
-
-#             current_half_packet_num = 0
-#             current_event_num       = 0
-#             counter_daqh_incorrect  = 0
-
-#             # Preallocate arrays for _total_event events.
-#             all_chn_value_0_array = np.zeros((_total_event, n_channels))
-#             all_chn_value_1_array = np.zeros((_total_event, n_channels))
-#             all_chn_value_2_array = np.zeros((_total_event, n_channels))
-#             hamming_code_array    = np.zeros((_total_event, 3*n_halves))
-#             daqh_good_array       = np.zeros((_total_event,   n_halves))
-
-#             for i in range(_total_event):
-#                 for j in range(n_halves):
-#                     daqh_good_array[i][j] = True
-
-#             if not packetlibX.send_daq_gen_start_stop(
-#                 _cmd_socket, _h2gcroc_ip, _h2gcroc_port,
-#                 fpga_addr=_fpga_addr, daq_push=0x00,
-#                 gen_start_stop=0, daq_start_stop=0xFF, verbose=False
-#             ):
-#                 print_warn("Failed to start the generator")
-#             if not packetlibX.send_daq_gen_start_stop(
-#                 _cmd_socket, _h2gcroc_ip, _h2gcroc_port,
-#                 fpga_addr=_fpga_addr, daq_push=0x00,
-#                 gen_start_stop=1, daq_start_stop=0xFF, verbose=False
-#             ):
-#                 print_warn("Failed to start the generator")
-
-#             if True:
-#                 try:
-#                     bytes_counter = 0
-#                     try:
-#                         for _ in range(100):
-#                             data_packet, _ = _data_socket.recvfrom(1358)
-
-#                             # * Find the lines with fixed line pattern
-#                             extracted_payloads_pool.extend(
-#                                 packetlibX.extract_raw_data(data_packet)
-#                             )
-#                             bytes_counter += len(data_packet)
-
-#                     except socket.timeout:
-#                         if _verbose:
-#                             print_warn("Socket timeout, no data received")
-
-#                         if not packetlibX.send_daq_gen_start_stop(
-#                             _cmd_socket, _h2gcroc_ip, _h2gcroc_port,
-#                             fpga_addr=_fpga_addr, daq_push=0x00,
-#                             gen_start_stop=0, daq_start_stop=0x00, verbose=False
-#                         ):
-#                             print_warn("Failed to stop the generator")
-
-#                         for _ in range(10):
-#                             try:
-#                                 data_packet, _ = _data_socket.recvfrom(1358)
-
-#                                 extracted_payloads_pool.extend(
-#                                     packetlibX.extract_raw_data(data_packet)
-#                                 )
-#                                 bytes_counter += len(data_packet)
-#                                 if len(data_packet) > 0:
-#                                     break
-
-#                             except socket.timeout:
-#                                 if _verbose:
-#                                     print_warn("Socket timeout, no data received")
-
-#                     num_packets = bytes_counter // 1358
-#                     half_packet_number = (bytes_counter - num_packets * 14) // 192
-#                     # half_packet_number = 2 * _total_asic_num * event_number
-#                     event_number = half_packet_number // (2 * _total_asic_num)
-
-#                     half_packet_number = int(half_packet_number)
-#                     event_number = int(event_number)
-
-#                     chunk_counter = 0
-#                     event_chunk_buffer = []
-
-#                     while len(extracted_payloads_pool) > 0:
-#                         payload_192 = extracted_payloads_pool.popleft()
-#                         chunk_counter += 1
-
-#                         extracted_data = packetlibX.extract_values_192(
-#                             payload_192, verbose=False
-#                         )
-#                         if extracted_data is None:
-#                             print_warn(f"Failed to extract chunk #{chunk_counter}")
-#                             continue
-
-#                         event_chunk_buffer.append(extracted_data)
-
-#                         if len(event_chunk_buffer) == chunks_per_event:
-#                             timestamps = [c["_timestamp"] for c in event_chunk_buffer]
-                            
-#                             if len(set(timestamps)) == 1:
-#                                 for _half, chunk in enumerate(event_chunk_buffer):
-#                                     _DaqH = chunk["_DaqH"]
-#                                     extracted_values = chunk["_extracted_values"]
-#                                     # Extract ASIC and packet ID
-#                                     byte3 = chunk["_address_id"]  # 3rd byte
-#                                     byte4 = chunk["_packet_id"]   # 4th byte
-#                                     asic_id = byte3 & 0x0F
-#                                     packet_id = byte4
-
-#                                     # Determine base channel ID for this chunk
-#                                     uni_chn_base = asic_id * 76 + (packet_id - 0x24) * 38     
-
-#                                     for j, vals in enumerate(extracted_values):
-#                                         channel_id = uni_chn_base + j
-#                                         all_chn_value_0_array[current_event_num][channel_id] = vals[1]
-#                                         all_chn_value_1_array[current_event_num][channel_id] = vals[2]
-#                                         all_chn_value_2_array[current_event_num][channel_id] = vals[3]
-
-#                                     # Hamming / DAQH
-#                                     hamming_code_array[current_event_num][_half*3 + 0] = packetlibX.DaqH_get_H1(_DaqH)
-#                                     hamming_code_array[current_event_num][_half*3 + 1] = packetlibX.DaqH_get_H2(_DaqH)
-#                                     hamming_code_array[current_event_num][_half*3 + 2] = packetlibX.DaqH_get_H3(_DaqH)
-#                                     daqh_good_array[current_event_num][_half] = packetlibX.DaqH_start_end_good(_DaqH)
-
-#                                 if np.all(hamming_code_array[current_event_num] == 0) and np.all(daqh_good_array[current_event_num]):
-#                                     timestamps_events.append(timestamps[0])
-#                                     current_event_num += 1
-#                                 else:
-#                                     print_warn("Invalid event detected (hamming or DAQH error)")
-#                             else:
-#                                 print_warn(f"Chunk timestamps mismatch: {timestamps}")
-
-#                             event_chunk_buffer.clear()
-
-#                         if current_event_num >= _total_event:
-#                             _all_events_received = True
-#                             break
-
-#                 except Exception as e:
-#                     if _verbose:
-#                         print_warn("Exception in receiving data")
-#                         print_warn(e)
-#                         print_warn('Halves received: ' + str(current_half_packet_num))
-#                         print_warn('Halves expected: ' + str(_total_event * 2 * _total_asic_num))
-#                         print_warn('left fragments:' + str(len(event_fragment_pool)))
-#                         print_warn("current event num:" + str(current_event_num))
-#                     _all_events_received = False
-#                     break
-                
-#             for _event in range(current_event_num):
-#                 if not np.all(daqh_good_array[_event] == True):
-#                     counter_daqh_incorrect += 1
-
-#             valid_events = current_event_num - counter_daqh_incorrect
-#             min_valid_needed = max(_total_event // 2, 1)
-#             if valid_events < min_valid_needed:
-#                 if _verbose:
-#                     print_warn(
-#                         f"Not enough valid events received "
-#                         f"(valid={valid_events}, total={current_event_num}, expected={_total_event})"
-#                     )
-#                 _all_events_received = False
-#                 continue
-#             timestamps_pure = []
-#             for _timestamp_index in range(len(timestamps_events)):
-#                 timestamps_pure.append(
-#                     timestamps_events[_timestamp_index] - timestamps_events[0]
-#                 )
-#             if len(timestamps_pure) == 0 or timestamps_pure[-1] != BC_PER_SHOT * _machine_gun:
-#                 if _verbose:
-#                     print_warn(
-#                         f"Machine gun coverage not enough: "
-#                         f"last_delta={timestamps_pure[-1] if len(timestamps_pure) > 0 else 'None'} "
-#                         f"expected={BC_PER_SHOT * _machine_gun}"
-#                     )
-#                 _all_events_received = False
-#                 continue
-
-#             for _chn in range(n_channels):
-#                 _candidate_adc_values = [[] for _ in range(_machine_gun + 1)]
-#                 _candidate_tot_values = [[] for _ in range(_machine_gun + 1)]
-#                 _candidate_toa_values = [[] for _ in range(_machine_gun + 1)]
-
-#                 for _event in range(current_event_num):
-#                     if len(_focus_half) == 0:
-#                         if np.all(hamming_code_array[_event] == 0) and np.all(daqh_good_array[_event] == True):
-#                             _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // BC_PER_SHOT
-#                             if _current_machine_gun > _machine_gun:
-#                                 print_warn(f"Machine gun index {_current_machine_gun} exceeds {_machine_gun}")
-#                                 continue
-#                             _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                             _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                             _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                     else:
-#                         hamming_code_focus = []
-#                         daqh_good_focus  = []
-#                         for _half in range(n_halves):
-#                             if _half in _focus_half:
-#                                 hamming_code_focus.append(hamming_code_array[_event][_half*3+0])
-#                                 hamming_code_focus.append(hamming_code_array[_event][_half*3+1])
-#                                 hamming_code_focus.append(hamming_code_array[_event][_half*3+2])
-#                                 daqh_good_focus.append(daqh_good_array[_event][_half])
-#                         hamming_code_focus = np.array(hamming_code_focus)
-#                         daqh_good_focus  = np.array(daqh_good_focus)
-#                         if np.all(hamming_code_focus == 0) and np.all(daqh_good_focus == True):
-#                             _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // BC_PER_SHOT
-#                             if _current_machine_gun > _machine_gun:
-#                                 print_warn(f"Machine gun index {_current_machine_gun} exceeds {_machine_gun}")
-#                                 continue
-#                             _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                             _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                             _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-
-#                 event_short = 0
-
-#                 for _machine_gun_value in range(_machine_gun + 1):
-#                     # ADC
-#                     if len(_candidate_adc_values[_machine_gun_value]) > 0:
-#                         _mean_adc = np.mean(_candidate_adc_values[_machine_gun_value])
-#                         _err_adc  = np.std(_candidate_adc_values[_machine_gun_value]) / np.sqrt(len(_candidate_adc_values[_machine_gun_value]))
-#                     else:
-#                         _mean_adc = 0.0
-#                         _err_adc  = 0.0
-#                     # TOT
-#                     if len(_candidate_tot_values[_machine_gun_value]) > 0:
-#                         _mean_tot = np.mean(_candidate_tot_values[_machine_gun_value])
-#                         _err_tot  = np.std(_candidate_tot_values[_machine_gun_value]) / np.sqrt(len(_candidate_tot_values[_machine_gun_value]))
-#                     else:
-#                         _mean_tot = 0.0
-#                         _err_tot  = 0.0
-#                     # ToA
-#                     if len(_candidate_toa_values[_machine_gun_value]) > 0:
-#                         _mean_toa = np.mean(_candidate_toa_values[_machine_gun_value])
-#                         _err_toa  = np.std(_candidate_toa_values[_machine_gun_value]) / np.sqrt(len(_candidate_toa_values[_machine_gun_value]))
-#                     else:
-#                         _mean_toa = 0.0
-#                         _err_toa  = 0.0
-
-#                     # remove nan values
-#                     if np.isnan(_mean_adc):
-#                         _mean_adc = 0.0
-#                     if np.isnan(_mean_tot):
-#                         _mean_tot = 0.0
-#                     if np.isnan(_mean_toa):
-#                         _mean_toa = 0.0
-#                     if np.isnan(_err_adc):
-#                         _err_adc = 0.0
-#                     if np.isnan(_err_tot):
-#                         _err_tot = 0.0
-#                     if np.isnan(_err_toa):
-#                         _err_toa = 0.0
-
-#                     _machine_gun_offset = _machine_gun_value + event_short
-#                     if _machine_gun_offset > _machine_gun:
-#                         _machine_gun_offset -= (_machine_gun + 1)
-
-#                     adc_mean_list[_machine_gun_offset][_chn] = _mean_adc
-#                     adc_err_list[_machine_gun_offset][_chn]  = _err_adc
-#                     tot_mean_list[_machine_gun_offset][_chn] = _mean_tot
-#                     tot_err_list[_machine_gun_offset][_chn]  = _err_tot
-#                     toa_mean_list[_machine_gun_offset][_chn] = _mean_toa
-#                     toa_err_list[_machine_gun_offset][_chn]  = _err_toa
-
-#             if 0:
-#                 for _chn in range(n_channels):
-#                     _candidate_adc_values = [[] for _ in range(_machine_gun + 1)]
-#                     _candidate_tot_values = [[] for _ in range(_machine_gun + 1)]
-#                     _candidate_toa_values = [[] for _ in range(_machine_gun + 1)]
-
-#                     for _event in range(current_event_num):
-#                         if len(_focus_half) == 0:
-#                             if np.all(hamming_code_array[_event] == 0) and np.all(daqh_good_array[_event] == True):
-#                                 _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // BC_PER_SHOT
-#                                 if _current_machine_gun > _machine_gun:
-#                                     print_warn(f"Machine gun {_current_machine_gun} exceeds {_machine_gun}")
-#                                     continue
-#                                 _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                                 _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                                 _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                         else:
-#                             hamming_code_focus = []
-#                             daqh_good_focus  = []
-#                             for _half in range(n_halves):
-#                                 if _half in _focus_half:
-#                                     hamming_code_focus.append(hamming_code_array[_event][_half*3+0])
-#                                     hamming_code_focus.append(hamming_code_array[_event][_half*3+1])
-#                                     hamming_code_focus.append(hamming_code_array[_event][_half*3+2])
-#                                     daqh_good_focus.append(daqh_good_array[_event][_half])
-#                             hamming_code_focus = np.array(hamming_code_focus)
-#                             daqh_good_focus  = np.array(daqh_good_focus)
-#                             if np.all(hamming_code_focus == 0) and np.all(daqh_good_focus == True):
-#                                 _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // BC_PER_SHOT
-#                                 if _current_machine_gun > _machine_gun:
-#                                     print_warn(f"Machine gun {_current_machine_gun} exceeds {_machine_gun}")
-#                                     continue
-#                                 _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                                 _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                                 _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                     event_short = 0
-#                     if any(len(lst) > 0 for lst in _candidate_adc_values):
-#                         for _machine_gun_value in range(_machine_gun + 1):
-#                             if len(_candidate_adc_values[_machine_gun_value]) > 0:
-#                                 _mean_adc = np.mean(_candidate_adc_values[_machine_gun_value])
-#                                 _err_adc  = np.std(_candidate_adc_values[_machine_gun_value]) / np.sqrt(len(_candidate_adc_values[_machine_gun_value]))
-#                             else:
-#                                 _mean_adc = 0
-#                                 _err_adc  = 0
-#                             if len(_candidate_tot_values[_machine_gun_value]) > 0:
-#                                 _mean_tot = np.mean(_candidate_tot_values[_machine_gun_value])
-#                                 _err_tot  = np.std(_candidate_tot_values[_machine_gun_value]) / np.sqrt(len(_candidate_tot_values[_machine_gun_value]))
-#                             else:
-#                                 _mean_tot = 0
-#                                 _err_tot  = 0
-#                             if len(_candidate_toa_values[_machine_gun_value]) > 0:
-#                                 _mean_toa = np.mean(_candidate_toa_values[_machine_gun_value])
-#                                 _err_toa  = np.std(_candidate_toa_values[_machine_gun_value]) / np.sqrt(len(_candidate_toa_values[_machine_gun_value]))
-#                             else:
-#                                 _mean_toa = 0
-#                                 _err_toa  = 0
-
-#                             # remove nan values
-#                             if np.isnan(_mean_adc):
-#                                 _mean_adc = 0
-#                             if np.isnan(_mean_tot):
-#                                 _mean_tot = 0
-#                             if np.isnan(_mean_toa):
-#                                 _mean_toa = 0
-#                             if np.isnan(_err_adc):
-#                                 _err_adc = 0
-#                             if np.isnan(_err_tot):
-#                                 _err_tot = 0
-#                             if np.isnan(_err_toa):
-#                                 _err_toa = 0
-
-#                             _machine_gun_offset = _machine_gun_value + event_short
-#                             if _machine_gun_offset > _machine_gun:
-#                                 _machine_gun_offset -= (_machine_gun + 1)   
-#                             adc_mean_list[_machine_gun_offset][_chn] = _mean_adc
-#                             adc_err_list[_machine_gun_offset][_chn]  = _err_adc
-#                             tot_mean_list[_machine_gun_offset][_chn] = _mean_tot
-#                             tot_err_list[_machine_gun_offset][_chn]  = _err_tot
-#                             toa_mean_list[_machine_gun_offset][_chn] = _mean_toa
-#                             toa_err_list[_machine_gun_offset][_chn]  = _err_toa
-#                     else:
-#                         for _machine_gun_value in range(_machine_gun + 1):
-#                             _machine_gun_offset = _machine_gun_value + event_short
-#                             if _machine_gun_offset > _machine_gun:
-#                                 _machine_gun_offset -= (_machine_gun + 1)   
-#                             adc_mean_list[_machine_gun_offset][_chn] = 0
-#                             adc_err_list[_machine_gun_offset][_chn]  = 0
-#                             tot_mean_list[_machine_gun_offset][_chn] = 0
-#                             tot_err_list[_machine_gun_offset][_chn]  = 0
-#                             toa_mean_list[_machine_gun_offset][_chn] = 0
-#                             toa_err_list[_machine_gun_offset][_chn]  = 0
-
-#         finally:
-#             if not packetlibX.send_daq_gen_start_stop(
-#                 _cmd_socket, _h2gcroc_ip, _h2gcroc_port,
-#                 fpga_addr=_fpga_addr, daq_push=0x00,
-#                 gen_start_stop=0, daq_start_stop=0x00, verbose=False
-#             ):
-#                 print_warn("Failed to stop the generator")
-
-#         if _verbose:
-#             print_info(
-#                 f"daqh bad events: {counter_daqh_incorrect} "
-#                 f"(expected: {_total_event}, received: {current_event_num})"
-#             )
-
-#     if not _all_events_received:
-#         print_warn("Not enough valid events received")
-#         print_warn("Returning list of zeros")
-
-#     return adc_mean_list, adc_err_list, tot_mean_list, tot_err_list, toa_mean_list, toa_err_list
-
-# def measure_all(_cmd_socket, _data_socket, _h2gcroc_ip, _h2gcroc_port, _total_asic_num, _fpga_addr, _machine_gun, _total_event, _fragment_life, _retry=1, _verbose=False, _focus_half=[]):
-# def measure_all(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragment_life, _retry=1, _verbose=False, _focus_half=[]):
-#     _cmd_socket  = _udp_target.cmd_outbound_conn
-#     _data_socket = _udp_target.data_data_conn
-#     _h2gcroc_ip  = _udp_target.board_ip
-#     _h2gcroc_port= _udp_target.board_port
-#     _fpga_addr   = _udp_target.board_id
-
-#     _retry_left = _retry
-#     _all_events_received = False
-
-#     n_channels = _total_asic_num * 76
-#     n_halves   = _total_asic_num * 2
-
-#     adc_mean_list = np.zeros((_machine_gun+1, n_channels))
-#     adc_err_list  = np.zeros((_machine_gun+1, n_channels))
-#     tot_mean_list = np.zeros((_machine_gun+1, n_channels))
-#     tot_err_list  = np.zeros((_machine_gun+1, n_channels))
-#     toa_mean_list = np.zeros((_machine_gun+1, n_channels))
-#     toa_err_list  = np.zeros((_machine_gun+1, n_channels))
-    
-#     while _retry_left > 0 and not _all_events_received:
-#         if _retry_left < _retry:
-#             if _verbose:
-#                 print_info(f"Retrying measurement, attempts left: {_retry_left}")
-#             time.sleep(0.1)
-#         _retry_left -= 1
-
-#         try:
-#             extracted_payloads_pool = deque()
-#             event_fragment_pool     = []
-
-#             timestamps_events = []
-
-#             current_half_packet_num = 0
-#             current_event_num       = 0
-#             counter_daqh_incorrect  = 0
-
-#             # Preallocate arrays for _event_num events.
-#             # We will later process only the rows for which we received data.
-#             all_chn_value_0_array = np.zeros((_total_event, n_channels))
-#             all_chn_value_1_array = np.zeros((_total_event, n_channels))
-#             all_chn_value_2_array = np.zeros((_total_event, n_channels))
-#             hamming_code_array    = np.zeros((_total_event, 3*n_halves))
-#             daqh_good_array       = np.zeros((_total_event,   n_halves))
-
-#             for i in range(_total_event):
-#                 for j in range(n_halves):
-#                     daqh_good_array[i][j] = True
-
-#             if not packetlibX.send_daq_gen_start_stop(_cmd_socket, _h2gcroc_ip, _h2gcroc_port, fpga_addr = _fpga_addr, daq_push=0x00, gen_start_stop=0, daq_start_stop=0xFF, verbose=False):
-#                 print_warn("Failed to start the generator")
-#             if not packetlibX.send_daq_gen_start_stop(_cmd_socket, _h2gcroc_ip, _h2gcroc_port, fpga_addr = _fpga_addr, daq_push=0x00, gen_start_stop=1, daq_start_stop=0xFF, verbose=False):
-#                 print_warn("Failed to start the generator")
-
-#             if True:
-#                 try:
-#                     bytes_counter = 0
-#                     try:
-#                         for _ in range(100):
-#                             data_packet, _ = _data_socket.recvfrom(1358)
-
-#                             # * Find the lines with fixed line pattern
-#                             extracted_payloads_pool.extend(packetlibX.extract_raw_data(data_packet))
-#                             bytes_counter += len(data_packet)
-
-#                     except socket.timeout:
-#                         if _verbose:
-#                             print_warn("Socket timeout, no data received")
-
-#                         if not packetlibX.send_daq_gen_start_stop(_cmd_socket, _h2gcroc_ip, _h2gcroc_port, fpga_addr = _fpga_addr, daq_push=0x00, gen_start_stop=0, daq_start_stop=0x00, verbose=False):
-#                             print_warn("Failed to stop the generator")
-
-#                         for _ in range(10):
-#                             try:
-
-#                                 data_packet, _ = _data_socket.recvfrom(1358)
-
-#                                 # * Find the lines with fixed line pattern
-#                                 extracted_payloads_pool.extend(packetlibX.extract_raw_data(data_packet))
-#                                 bytes_counter += len(data_packet)
-#                                 if len(data_packet) > 0:
-#                                     break
-
-#                             except socket.timeout:
-#                                 if _verbose:
-#                                     print_warn("Socket timeout, no data received")
-
-#                     # logger.debug(f"Received {bytes_counter} bytes of data")
-#                     num_packets = bytes_counter / 1358
-#                     half_packet_number = (bytes_counter - num_packets * 14) / 192
-#                     event_number = half_packet_number / 2 / _total_asic_num
-#                     half_packet_number = int(half_packet_number)
-#                     event_number = int(event_number)
-
-#                     #logger.debug(f"Received {num_packets} packets, {half_packet_number} half packets, {event_number} events")
-#                     #logger.debug(f"Received {len(extracted_payloads_pool)} payloads")
-
-#                     #_logger.debug(f"Starting processing loop with {len(extracted_payloads_pool)} payloads")
-
-#                     chunk_counter = 0
-#                     event_chunk_buffer = []
-
-#                     while len(extracted_payloads_pool) > 0:
-#                         payload_192 = extracted_payloads_pool.popleft()
-#                         chunk_counter += 1
-
-#                         extracted_data = packetlibX.extract_values_192(payload_192, verbose=False)
-#                         if extracted_data is None:
-#                             print_warn(f"Failed to extract chunk #{chunk_counter}")
-#                             continue
-
-#                         event_chunk_buffer.append(extracted_data)
-#                         # When we have 4 chunks, we can assemble a full event
-#                         if len(event_chunk_buffer) == 4:
-#                             # Combine or verify that these 4 belong together (same timestamp, etc.)
-#                             timestamps = [c["_timestamp"] for c in event_chunk_buffer]
-                            
-#                             if len(set(timestamps)) == 1:
-#                                 # ✅ All 4 chunks belong to the same event
-#                                 for _half, chunk in enumerate(event_chunk_buffer):
-#                                     _DaqH = chunk["_DaqH"]
-#                                     extracted_values = chunk["_extracted_values"]
-#                                     # Extract ASIC and packet ID
-#                                     byte3 = chunk["_address_id"]  # 3rd byte
-#                                     byte4 = chunk["_packet_id"]  # 4th byte
-#                                     asic_id = byte3 & 0x0F   # upper 4 bits of 3rd byte
-#                                     #logger.debug(asic_id)
-#                                     packet_id = byte4               # full 4th byte
-#                                     # Determine base channel ID for this chunk
-#                                     uni_chn_base = asic_id * 76 + (packet_id - 0x24) * 38     
-
-#                                     # Fill arrays, same as before
-#                                     for j, vals in enumerate(extracted_values):
-#                                         channel_id = uni_chn_base + j  # correct unique channel ID
-#                                         all_chn_value_0_array[current_event_num][channel_id] = vals[1]
-#                                         all_chn_value_1_array[current_event_num][channel_id] = vals[2]
-#                                         all_chn_value_2_array[current_event_num][channel_id] = vals[3]
-
-#                                     hamming_code_array[current_event_num][_half*3 + 0] = packetlibX.DaqH_get_H1(_DaqH)
-#                                     hamming_code_array[current_event_num][_half*3 + 1] = packetlibX.DaqH_get_H2(_DaqH)
-#                                     hamming_code_array[current_event_num][_half*3 + 2] = packetlibX.DaqH_get_H3(_DaqH)
-#                                     daqh_good_array[current_event_num][_half] = packetlibX.DaqH_start_end_good(_DaqH)
-
-#                                 # After processing all 4 halves → count 1 event
-#                                 if np.all(hamming_code_array[current_event_num] == 0) and np.all(daqh_good_array[current_event_num]):
-#                                     timestamps_events.append(timestamps[0])
-#                                     current_event_num += 1
-#                                 else:
-#                                     print_warn("Invalid event detected (hamming or DAQH error)")
-
-#                             else:
-#                                 print_warn(f"Chunk timestamps mismatch: {timestamps}")
-
-#                             # Clear buffer for next event
-#                             event_chunk_buffer.clear()
-
-#                         # Stop when all events collected
-#                         if current_event_num >= _total_event:
-#                             #_logger.debug(f"Received enough events: {current_event_num}/{_total_event}")
-#                             _all_events_received = True
-#                             break
-
-#                     #_logger.debug(f"Loop finished — processed {chunk_counter} chunks, built {current_event_num} full events")
-
-
-#                 except Exception as e:
-#                     if _verbose:
-#                         print_warn("Exception in receiving data")
-#                         print_warn(e)
-#                         print_warn('Halves received: ' + str(current_half_packet_num))
-#                         print_warn('Halves expected: ' + str(_total_event * 2 * _total_asic_num))
-#                         print_warn('left fragments:' + str(len(event_fragment_pool)))
-#                         print_warn("current event num:" + str(current_event_num))
-#                     _all_events_received = False
-#                     break
-                
-#             for _event in range(current_event_num):
-#                 if not np.all(daqh_good_array[_event] == True):
-#                     counter_daqh_incorrect += 1
-
-#             if (current_event_num - counter_daqh_incorrect) < min(_total_event//2, 1):
-#                 if _verbose:
-#                     print_warn("Not enough valid events received " + str(current_event_num) + "  " + str(_total_event))
-#                 _all_events_received = False
-#                 continue
-            
-#             #_logger.debug(f"Event number: {current_event_num}")
-#             timestamps_pure = []
-#             for _timestamp_index in range(len(timestamps_events)):
-#                 timestamps_pure.append(timestamps_events[_timestamp_index] - timestamps_events[0])
-#             #_logger.debug(f"Timestamps: {timestamps_pure}")
-#             if timestamps_pure[-1] != 164*(_machine_gun):
-#                 print_warn(f"Machine gun {timestamps_pure[-1]} is not enough for {_machine_gun}")
-#                 _all_events_received = False
-#                 continue
-            
-#             for _chn in range(n_channels):
-#                 _candidate_adc_values = [[] for _ in range(_machine_gun + 1)]
-#                 _candidate_tot_values = [[] for _ in range(_machine_gun + 1)]
-#                 _candidate_toa_values = [[] for _ in range(_machine_gun + 1)]
-#                 # _current_machine_gun = 0
-
-#                 for _event in range(current_event_num):
-#                     # if np.all(hamming_code_array[_event] == 0):
-#                     if len(_focus_half) == 0:
-#                         if np.all(hamming_code_array[_event] == 0) and np.all(daqh_good_array[_event] == True):
-#                             _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // 164
-#                             if _current_machine_gun > _machine_gun:
-#                                 print_warn(f"Machine gun {_current_machine_gun} exceeds {_machine_gun}")
-#                                 continue
-#                             # if _chn == 6:
-#                             #     _logger.debug(f"Event {_event}, machine gun {_current_machine_gun}, channel {_chn}: ADC: {all_chn_value_0_array[_event][_chn]}, TOT: {all_chn_value_1_array[_event][_chn]}, ToA: {all_chn_value_2_array[_event][_chn]}")
-#                             _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                             _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                             _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                         # _current_machine_gun = (_current_machine_gun + 1) % (_machine_gun + 1)
-#                     else:
-#                         # only check the focus half daqh and hamming code
-#                         hamming_code_focus = []
-#                         daqh_good_focus  = []
-#                         for _half in range(n_halves):
-#                             if _half in _focus_half:
-#                                 hamming_code_focus.append(hamming_code_array[_event][_half*3+0])
-#                                 hamming_code_focus.append(hamming_code_array[_event][_half*3+1])
-#                                 hamming_code_focus.append(hamming_code_array[_event][_half*3+2])
-#                                 daqh_good_focus.append(daqh_good_array[_event][_half])
-#                         hamming_code_focus = np.array(hamming_code_focus)
-#                         daqh_good_focus  = np.array(daqh_good_focus)
-#                         if np.all(hamming_code_focus == 0) and np.all(daqh_good_focus == True):
-#                             _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // 41
-#                             # if _chn == 6:
-#                             #     _logger.debug(f"Event {_event}, machine gun {_current_machine_gun}, channel {_chn}: ADC: {all_chn_value_0_array[_event][_chn]}, TOT: {all_chn_value_1_array[_event][_chn]}, ToA: {all_chn_value_2_array[_event][_chn]}")
-#                             _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                             _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                             _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                 event_short = 0
-#                 if len(_candidate_adc_values) > 0:
-#                     for _machine_gun_value in range(_machine_gun + 1):
-#                         if len(_candidate_adc_values[_machine_gun_value]) > 0:
-#                             _mean_adc = np.mean(_candidate_adc_values[_machine_gun_value])
-#                             _err_adc  = np.std(_candidate_adc_values[_machine_gun_value]) / np.sqrt(len(_candidate_adc_values[_machine_gun_value]))
-#                         else:
-#                             _mean_adc = 0
-#                             _err_adc  = 0
-#                         if len(_candidate_tot_values[_machine_gun_value]) > 0:
-#                             _mean_tot = np.mean(_candidate_tot_values[_machine_gun_value])
-#                             _err_tot  = np.std(_candidate_tot_values[_machine_gun_value]) / np.sqrt(len(_candidate_tot_values[_machine_gun_value]))
-#                         else:
-#                             _mean_tot = 0
-#                             _err_tot  = 0
-#                         if len(_candidate_toa_values[_machine_gun_value]) > 0:
-#                             _mean_toa = np.mean(_candidate_toa_values[_machine_gun_value])
-#                             _err_toa  = np.std(_candidate_toa_values[_machine_gun_value]) / np.sqrt(len(_candidate_toa_values[_machine_gun_value]))
-#                         else:
-#                             _mean_toa = 0
-#                             _err_toa  = 0
-
-#                         # remove nan values
-#                         if np.isnan(_mean_adc):
-#                             _mean_adc = 0
-#                         if np.isnan(_mean_tot):
-#                             _mean_tot = 0
-#                         if np.isnan(_mean_toa):
-#                             _mean_toa = 0
-#                         if np.isnan(_err_adc):
-#                             _err_adc = 0
-#                         if np.isnan(_err_tot):
-#                             _err_tot = 0
-#                         if np.isnan(_err_toa):
-#                             _err_toa = 0
-
-#                         _machine_gun_offset = _machine_gun_value + event_short
-#                         if _machine_gun_offset > _machine_gun:
-#                             _machine_gun_offset -= (_machine_gun + 1)   
-#                         adc_mean_list[_machine_gun_offset][_chn] = _mean_adc
-#                         adc_err_list[_machine_gun_offset][_chn]  = _err_adc
-#                         tot_mean_list[_machine_gun_offset][_chn] = _mean_tot
-#                         tot_err_list[_machine_gun_offset][_chn]  = _err_tot
-#                         toa_mean_list[_machine_gun_offset][_chn] = _mean_toa
-#                         toa_err_list[_machine_gun_offset][_chn]  = _err_toa
-#                         # _logger.debug(f"Machine gun {_machine_gun}, channel {_chn}: ADC mean: {adc_mean_list[_machine_gun][_chn]}, ADC error: {adc_err_list[_machine_gun][_chn]}, TOT mean: {tot_mean_list[_machine_gun][_chn]}, TOT error: {tot_err_list[_machine_gun][_chn]}, ToA mean: {toa_mean_list[_machine_gun][_chn]}, ToA error: {toa_err_list[_machine_gun][_chn]}")
-#                 else:
-#                     for _machine_gun_value in range(_machine_gun + 1):
-#                         _machine_gun_offset = _machine_gun_value + event_short
-#                         if _machine_gun_offset > _machine_gun:
-#                             _machine_gun_offset -= (_machine_gun + 1)   
-#                         adc_mean_list[_machine_gun_offset][_chn] = 0
-#                         adc_err_list[_machine_gun_offset][_chn]  = 0
-#                         tot_mean_list[_machine_gun_offset][_chn] = 0
-#                         tot_err_list[_machine_gun_offset][_chn]  = 0
-#                         toa_mean_list[_machine_gun_offset][_chn] = 0
-#                         toa_err_list[_machine_gun_offset][_chn]  = 0
-#             #exit()
-#             if 0:
-#                 for _chn in range(n_channels):
-#                     _candidate_adc_values = [[] for _ in range(_machine_gun + 1)]
-#                     _candidate_tot_values = [[] for _ in range(_machine_gun + 1)]
-#                     _candidate_toa_values = [[] for _ in range(_machine_gun + 1)]
-#                     # _current_machine_gun = 0
-
-#                     for _event in range(current_event_num):
-#                         # if np.all(hamming_code_array[_event] == 0):
-#                         if len(_focus_half) == 0:
-#                             if np.all(hamming_code_array[_event] == 0) and np.all(daqh_good_array[_event] == True):
-#                                 _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // 41
-#                                 if _current_machine_gun > _machine_gun:
-#                                     print_warn(f"Machine gun {_current_machine_gun} exceeds {_machine_gun}")
-#                                     continue
-#                                 # if _chn == 6:
-#                                 #     _logger.debug(f"Event {_event}, machine gun {_current_machine_gun}, channel {_chn}: ADC: {all_chn_value_0_array[_event][_chn]}, TOT: {all_chn_value_1_array[_event][_chn]}, ToA: {all_chn_value_2_array[_event][_chn]}")
-#                                 _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                                 _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                                 _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                             # _current_machine_gun = (_current_machine_gun + 1) % (_machine_gun + 1)
-#                         else:
-#                             # only check the focus half daqh and hamming code
-#                             hamming_code_focus = []
-#                             daqh_good_focus  = []
-#                             for _half in range(n_halves):
-#                                 if _half in _focus_half:
-#                                     hamming_code_focus.append(hamming_code_array[_event][_half*3+0])
-#                                     hamming_code_focus.append(hamming_code_array[_event][_half*3+1])
-#                                     hamming_code_focus.append(hamming_code_array[_event][_half*3+2])
-#                                     daqh_good_focus.append(daqh_good_array[_event][_half])
-#                             hamming_code_focus = np.array(hamming_code_focus)
-#                             daqh_good_focus  = np.array(daqh_good_focus)
-#                             if np.all(hamming_code_focus == 0) and np.all(daqh_good_focus == True):
-#                                 _current_machine_gun = (timestamps_events[_event] - timestamps_events[0]) // 41
-#                                 # if _chn == 6:
-#                                 #     _logger.debug(f"Event {_event}, machine gun {_current_machine_gun}, channel {_chn}: ADC: {all_chn_value_0_array[_event][_chn]}, TOT: {all_chn_value_1_array[_event][_chn]}, ToA: {all_chn_value_2_array[_event][_chn]}")
-#                                 _candidate_adc_values[_current_machine_gun].append(all_chn_value_0_array[_event][_chn])
-#                                 _candidate_tot_values[_current_machine_gun].append(all_chn_value_1_array[_event][_chn])
-#                                 _candidate_toa_values[_current_machine_gun].append(all_chn_value_2_array[_event][_chn])
-#                     event_short = 0
-#                     if len(_candidate_adc_values) > 0:
-#                         for _machine_gun_value in range(_machine_gun + 1):
-#                             if len(_candidate_adc_values[_machine_gun_value]) > 0:
-#                                 _mean_adc = np.mean(_candidate_adc_values[_machine_gun_value])
-#                                 _err_adc  = np.std(_candidate_adc_values[_machine_gun_value]) / np.sqrt(len(_candidate_adc_values[_machine_gun_value]))
-#                             else:
-#                                 _mean_adc = 0
-#                                 _err_adc  = 0
-#                             if len(_candidate_tot_values[_machine_gun_value]) > 0:
-#                                 _mean_tot = np.mean(_candidate_tot_values[_machine_gun_value])
-#                                 _err_tot  = np.std(_candidate_tot_values[_machine_gun_value]) / np.sqrt(len(_candidate_tot_values[_machine_gun_value]))
-#                             else:
-#                                 _mean_tot = 0
-#                                 _err_tot  = 0
-#                             if len(_candidate_toa_values[_machine_gun_value]) > 0:
-#                                 _mean_toa = np.mean(_candidate_toa_values[_machine_gun_value])
-#                                 _err_toa  = np.std(_candidate_toa_values[_machine_gun_value]) / np.sqrt(len(_candidate_toa_values[_machine_gun_value]))
-#                             else:
-#                                 _mean_toa = 0
-#                                 _err_toa  = 0
-
-#                             # remove nan values
-#                             if np.isnan(_mean_adc):
-#                                 _mean_adc = 0
-#                             if np.isnan(_mean_tot):
-#                                 _mean_tot = 0
-#                             if np.isnan(_mean_toa):
-#                                 _mean_toa = 0
-#                             if np.isnan(_err_adc):
-#                                 _err_adc = 0
-#                             if np.isnan(_err_tot):
-#                                 _err_tot = 0
-#                             if np.isnan(_err_toa):
-#                                 _err_toa = 0
-
-#                             _machine_gun_offset = _machine_gun_value + event_short
-#                             if _machine_gun_offset > _machine_gun:
-#                                 _machine_gun_offset -= (_machine_gun + 1)   
-#                             adc_mean_list[_machine_gun_offset][_chn] = _mean_adc
-#                             adc_err_list[_machine_gun_offset][_chn]  = _err_adc
-#                             tot_mean_list[_machine_gun_offset][_chn] = _mean_tot
-#                             tot_err_list[_machine_gun_offset][_chn]  = _err_tot
-#                             toa_mean_list[_machine_gun_offset][_chn] = _mean_toa
-#                             toa_err_list[_machine_gun_offset][_chn]  = _err_toa
-#                             # _logger.debug(f"Machine gun {_machine_gun}, channel {_chn}: ADC mean: {adc_mean_list[_machine_gun][_chn]}, ADC error: {adc_err_list[_machine_gun][_chn]}, TOT mean: {tot_mean_list[_machine_gun][_chn]}, TOT error: {tot_err_list[_machine_gun][_chn]}, ToA mean: {toa_mean_list[_machine_gun][_chn]}, ToA error: {toa_err_list[_machine_gun][_chn]}")
-#                     else:
-#                         for _machine_gun_value in range(_machine_gun + 1):
-#                             _machine_gun_offset = _machine_gun_value + event_short
-#                             if _machine_gun_offset > _machine_gun:
-#                                 _machine_gun_offset -= (_machine_gun + 1)   
-#                             adc_mean_list[_machine_gun_offset][_chn] = 0
-#                             adc_err_list[_machine_gun_offset][_chn]  = 0
-#                             tot_mean_list[_machine_gun_offset][_chn] = 0
-#                             tot_err_list[_machine_gun_offset][_chn]  = 0
-#                             toa_mean_list[_machine_gun_offset][_chn] = 0
-#                             toa_err_list[_machine_gun_offset][_chn]  = 0
-
-#         finally:
-#             if not packetlibX.send_daq_gen_start_stop(_cmd_socket, _h2gcroc_ip, _h2gcroc_port, fpga_addr = _fpga_addr, daq_push=0x00, gen_start_stop=0, daq_start_stop=0x00, verbose=False):
-#                 print_warn("Failed to stop the generator")
-
-#         if _verbose:
-#             print_info(f"daqh bad events: {counter_daqh_incorrect} (expected: {_total_event}, received: {current_event_num})")
-
-#     if not _all_events_received:
-#         print_warn("Not enough valid events received")
-#         print_warn("Returning list of zeros")
-
-#     return adc_mean_list, adc_err_list, tot_mean_list, tot_err_list, toa_mean_list, toa_err_list
-
 
 def measure_adc(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragment_life, _logger, _retry=1, _verbose=False):
     adc_mean_list, adc_err_list, _, _, _, _ = measure_all(_udp_target, _total_asic_num, _machine_gun, _total_event, _fragment_life, _retry=_retry, _verbose=_verbose)
@@ -1604,7 +793,6 @@ def Inj_Normal(_cmd_out_conn, _cmd_data_conn, _data_data_conn, _h2gcroc_ip, _h2g
                     _chn_v1_list[_machine_gun_index][_chn + _asic_index*76] = v1_list[_machine_gun_index][_chn + _asic_index*76]
                     _chn_v2_list[_machine_gun_index][_chn + _asic_index*76] = v2_list[_machine_gun_index][_chn + _asic_index*76]
 
-
                 # transpose the list
                 #  print(f'index: {_chn + _asic_index*76}')
                 for _machine_gun_index in range(_machine_gun+1):
@@ -1617,17 +805,26 @@ def Inj_Normal(_cmd_out_conn, _cmd_data_conn, _data_data_conn, _h2gcroc_ip, _h2g
 
     return val0_list_assembled, val0_err_list_assembled, val1_list_assembled, val1_err_list_assembled, val2_list_assembled, val2_err_list_assembled
 
-def Scan_12b(_cmd_out_conn, _cmd_data_conn, _data_data_conn, _h2gcroc_ip, _h2gcroc_port, _fpga_address, _progress_bar, _asic_num, _scan_chn_pack, _machine_gun, _expected_event_number, _fragment_life, _config, unused_chn_list, _dead_chn_list, _i2c_dict, _logger, _retry, _toa_setting=True, _verbose=False):
-    if _asic_num != len(_config):
-        _logger.error("Number of ASICs does not match the number of configurations")
+def Scan_12b(_udp_target, _progress_bar, _asic_num, _scan_chn_pack, _machine_gun, _expected_event_number, _fragment_life, _dead_chn_list, _asic_settings, _toa_halves, _tot_halves, _toa_channels, _tot_channels, _retry, _toa_setting=True, _verbose=False):
+    if _asic_num != len(_asic_settings):
+        print_err("Number of ASICs does not match the number of configurations")
+        return
+    
+    if len(_toa_halves) != 2*_asic_num or len(_tot_halves) != 2*_asic_num:
+        print_err("Length of TOA/ToT halves does not match the number of ASICs")
+        return
+    
+    if len(_toa_channels) != 72*_asic_num or len(_tot_channels) != 72*_asic_num:
+        print_err("Length of TOA/ToT channels does not match the number of ASICs")
         return
     
     if _scan_chn_pack > 76 or _scan_chn_pack < 1:
-        _logger.error("Invalid scan channel pack number")
+        print_err("Invalid scan channel pack number")
         return
-    
     _used_scan_values = []
+    _copied_asic_settings = [copy.deepcopy(_asic_settings[i]) for i in range(_asic_num)]
 
+    _scan_val0_list     = []
     _scan_val0_list     = []
     _scan_val0_err_list = []
     _scan_val1_list     = []
@@ -1636,8 +833,6 @@ def Scan_12b(_cmd_out_conn, _cmd_data_conn, _data_data_conn, _h2gcroc_ip, _h2gcr
     _scan_val2_err_list = []
 
     for _12b_dac_value in _progress_bar:
-        # _progress_bar.set_description(f"12b DAC: {_12b_dac_value}")
-        # _logger.debug(f"12b DAC: {_12b_dac_value}")
         _used_scan_values.append(_12b_dac_value)
 
         val0_list_assembled     = np.zeros(76*_asic_num, dtype=np.int16)
@@ -1650,131 +845,146 @@ def Scan_12b(_cmd_out_conn, _cmd_data_conn, _data_data_conn, _h2gcroc_ip, _h2gcr
         for _asic_index in range(_asic_num):
             # -- Set up reference voltage ---------------------------
             # -------------------------------------------------------
-            _asic_config = _config[_asic_index]
-            _ref_content_half_0 = _asic_config["ref_voltage_0"]
-            _ref_content_half_1 = _asic_config["ref_voltage_1"]
-            _toa_global_threshold = _asic_config["toa_global_threshold"]
-            _tot_global_threshold = _asic_config["tot_global_threshold"]
-
-            _ref_content_half_0[7] = 0x40 | _12b_dac_value >> 8
-            _ref_content_half_0[6] = _12b_dac_value & 0xFF  
-            _ref_content_half_1[7] = 0x40 | _12b_dac_value >> 8
-            _ref_content_half_1[6] = _12b_dac_value & 0xFF
-
+            _asic_setting = _copied_asic_settings[_asic_index]
+            if not _asic_setting.set_12b_dac(_12b_dac_value, half_index=0):
+                print_err(f"Failed to set 12b DAC for ASIC {_asic_index} half 0")
+            if not _asic_setting.set_12b_dac(_12b_dac_value, half_index=1):
+                print_err(f"Failed to set 12b DAC for ASIC {_asic_index} half 1")
+            if not _asic_setting.set_intctest(True, half_index=0):
+                print_err(f"Failed to set IntCTest for ASIC {_asic_index} half 0")
+            if not _asic_setting.set_intctest(True, half_index=1):
+                print_err(f"Failed to set IntCTest for ASIC {_asic_index} half 1")
             if _toa_setting:
-                _ref_content_half_0[3] = _toa_global_threshold[0] >> 2
-                _ref_content_half_1[3] = _toa_global_threshold[1] >> 2
-            _ref_content_half_0[2] = _tot_global_threshold[0] >> 2
-            _ref_content_half_1[2] = _tot_global_threshold[1] >> 2
+                if not _asic_setting.set_toa_vref(vref_value=_toa_halves[2*_asic_index], half_index=0):
+                    print_err(f"Failed to set TOA Vref for ASIC {_asic_index} half 0")
+                if not _asic_setting.set_toa_vref(vref_value=_toa_halves[2*_asic_index + 1], half_index=1):
+                    print_err(f"Failed to set TOA Vref for ASIC {_asic_index} half 1")
+            if not _asic_setting.set_tot_vref(vref_value=_tot_halves[2*_asic_index], half_index=0):
+                print_err(f"Failed to set TOT Vref for ASIC {_asic_index} half 0")
+            if not _asic_setting.set_tot_vref(vref_value=_tot_halves[2*_asic_index + 1], half_index=1):
+                print_err(f"Failed to set TOT Vref for ASIC {_asic_index} half 1")
 
-            _ref_content_half_0[10]= 0x40
-            _ref_content_half_1[10]= 0x40
+            if not _asic_setting.set_choice_cinj(True, half_index=0):
+                print_err(f"Failed to set Choice_Cinj for ASIC {_asic_index} half 0")   
+            if not _asic_setting.set_choice_cinj(True, half_index=1):
+                print_err(f"Failed to set Choice_Cinj for ASIC {_asic_index} half 1")
+            if not _asic_setting.set_extctest_2v5(False, half_index=0):
+                print_err(f"Failed to set ExtCTest 2v5 for ASIC {_asic_index} half 0")
+            if not _asic_setting.set_extctest_2v5(False, half_index=1):
+                print_err(f"Failed to set ExtCTest 2v5 for ASIC {_asic_index} half 1")
 
-            if _toa_setting:
-                _ref_content_half_0[1] = (_ref_content_half_0[1] & 0x0F) | ((_toa_global_threshold[0] & 0x03) << 4) | ((_tot_global_threshold[0] & 0x03) << 6)
-                _ref_content_half_1[1] = (_ref_content_half_1[1] & 0x0F) | ((_toa_global_threshold[1] & 0x03) << 4) | ((_tot_global_threshold[1] & 0x03) << 6)
-            else:
-                _ref_content_half_0[1] = (_ref_content_half_0[1] & 0x3F) | ((_tot_global_threshold[0] & 0x03) << 6)
-                _ref_content_half_1[1] = (_ref_content_half_1[1] & 0x3F) | ((_tot_global_threshold[1] & 0x03) << 6)
-
-            if not packetlib.send_check_i2c_wrapper(_cmd_out_conn, _cmd_data_conn, _h2gcroc_ip, _h2gcroc_port, asic_num=_asic_index, fpga_addr = _fpga_address, sub_addr=packetlib.subblock_address_dict["Reference_Voltage_0"], reg_addr=0x00, data=_ref_content_half_0, retry=_retry, verbose=_verbose):
-                logger.warning(f"Failed to set Reference_Voltage_0 settings for ASIC {_asic_index}")
-
-            if not packetlib.send_check_i2c_wrapper(_cmd_out_conn, _cmd_data_conn, _h2gcroc_ip, _h2gcroc_port, asic_num=_asic_index, fpga_addr = _fpga_address, sub_addr=packetlib.subblock_address_dict["Reference_Voltage_1"], reg_addr=0x00, data=_ref_content_half_1, retry=_retry, verbose=_verbose):
-                logger.warning(f"Failed to set Reference_Voltage_1 settings for ASIC {_asic_index}")
-            # -------------------------------------------------------
+            # _asic_setting.print_reg("Reference_Voltage_0")
+            # _asic_setting.print_reg("Reference_Voltage_1")
+            if not _asic_setting.send_reference_voltage_0_register(_udp_target):
+                print_err(f"Failed to send Reference Voltage 0 register for ASIC {_asic_index}")
+            if not _asic_setting.send_reference_voltage_1_register(_udp_target):
+                print_err(f"Failed to send Reference Voltage 1 register for ASIC {_asic_index}")
 
         # -- Set up channel wise registers ----------------------
         # -------------------------------------------------------
-        for _chn_pack_pos in range(0, 76, _scan_chn_pack):
-            _pack_channels = []
-            _half_focus = []
-            for _i in range(_scan_chn_pack):
-                if _chn_pack_pos + _i < 76:
-                    _pack_channels.append(_chn_pack_pos + _i)
-                    _chn_half = (_chn_pack_pos + _i) // 38
-                    # if _chn_half not in _half_focus:
-                    #     _half_focus.append(_chn_half)
-            # _logger.debug(f"Channel pack: {_pack_channels}")
-            for _chn in _pack_channels:
-                _sub_addr = packetlib.uni_chn_to_subblock_list[_chn]
-                _reg_key  = UniChannelNum2RegKey(_i2c_dict, _sub_addr)
-                for _asic_index in range(_asic_num):
-                    if _chn + 76*_asic_index in unused_chn_list or _chn + 76*_asic_index in _dead_chn_list:
+        flag_all_channels_feed = False
+        max_chn_half = 38
+        current_chn_half = 0
+        while not flag_all_channels_feed:
+            _pack_channels = [] # this is 72 channel indexing
+            _pack_channels_raw = [] # this is 76 channel indexing
+
+            while len(_pack_channels) < _scan_chn_pack and not flag_all_channels_feed:
+                for _half in range(2):
+                    _chn_index = current_chn_half + _half*38
+                    if _chn_index < 76:
+                        _chn_valid = single_channel_index_remove_cm_calib(_chn_index)
+                        _pack_channels_raw.append(_chn_index)
+                        if _chn_valid != -1:
+                            _pack_channels.append(_chn_valid)
+                current_chn_half +=1
+                if current_chn_half >= max_chn_half:
+                    flag_all_channels_feed = True
+                    break
+
+            # _half_focus = []
+            # for _i in range(_scan_chn_pack):
+            #     for _half in range(2):
+            #         if _chn_pack_pos + _i + _half*38 < 76:
+            #             _chn_valid = single_channel_index_remove_cm_calib(_chn_pack_pos+_i + _half*38)
+            #             _pack_channels_raw.append(_chn_pack_pos + _i + _half*38)
+            #             if _chn_valid != -1:
+            #                 _pack_channels.append(_chn_valid)
+           
+            for _asic in range(_asic_num):
+                _asic_setting = _copied_asic_settings[_asic]
+                for _chn in _pack_channels:
+                    if _asic*72 + _chn in _dead_chn_list:
                         continue
-                    _current_config = _config[_asic_index]
-                    _reg_str        = _current_config["config"]["Register Settings"][_reg_key]
-                    _reg_val        = [int(x, 16) for x in _reg_str.split()]
-                    _reg_val[4]     = _reg_val[4] & 0xFD | 0x04 # ! enable high range injection
-                    _reg_val[14]    = 0xC0
-                    _reg_val[2]     = (_current_config["tot_chn_threshold"][_chn] & 0x3F) << 2
+                    _chn_toa = _toa_channels[_asic*72 + _chn]
+                    _chn_tot = _tot_channels[_asic*72 + _chn]
+
                     if _toa_setting:
-                        _reg_val[1]     = (_current_config["toa_chn_threshold"][_chn] & 0x3F) << 2
-                    if not packetlib.send_check_i2c_wrapper(_cmd_out_conn, _cmd_data_conn, _h2gcroc_ip, _h2gcroc_port, asic_num=_asic_index, fpga_addr = _fpga_address, sub_addr=_sub_addr, reg_addr=0x00, data=_reg_val, retry=_retry, verbose=_verbose):
-                        logger.warning(f"Failed to set Channel Wise Register {_reg_key} for ASIC {_asic_index}")
+                        if not _asic_setting.set_chn_trim_toa(_chn, _chn_toa):
+                            print_err(f"Failed to set TOA trim for ASIC {_asic} channel {_chn}")
+                    if not _asic_setting.set_chn_trim_tot(_chn, _chn_tot):
+                        print_err(f"Failed to set TOT trim for ASIC {_asic} channel {_chn}")
+                    if not _asic_setting.set_chn_highrange(_chn, True):
+                        print_err(f"Failed to set high range for ASIC {_asic} channel {_chn}")
+                    if not _asic_setting.set_chn_lowrange(_chn, False):
+                        print_err(f"Failed to set low range for ASIC {_asic} channel {_chn}")
+                    if not _asic_setting.set_chn_sign_dac(_chn):
+                        print_err(f"Failed to set sign DAC for ASIC {_asic} channel {_chn}")
+                    if not _asic_setting.set_chn_gain_conv2(_chn):
+                        print_err(f"Failed to set gain conv2 for ASIC {_asic} channel {_chn}")
 
-            # time.sleep(0.1)
+                    # _asic_setting.print_reg("Channel_" + str(_chn))
+                    if not _asic_setting.send_channel_register(_udp_target, _chn):
+                        print_err(f"Failed to send channel register for ASIC {_asic} channel {_chn}")
 
-            v0_list, v0_err, v1_list, v1_err, v2_list, v2_err = measure_all(_cmd_out_conn, _data_data_conn, _h2gcroc_ip, _h2gcroc_port, _asic_num, _fpga_address, _machine_gun, _expected_event_number, _fragment_life, _logger, _retry, _focus_half=_half_focus)
+            v0_list, v0_err, v1_list, v1_err, v2_list, v2_err = measure_all(_udp_target, _asic_num, _machine_gun, _expected_event_number, _fragment_life, _retry, _focus_half=[])
+            # two digit channel index
+            channel_str = ', '.join([f"{ch:02d}" for ch in _pack_channels])
+            print(f"-- 12b DAC {_12b_dac_value:04d}, channels {channel_str}")
+            # for _asic in range(_asic_num):
+            #     _pack_channels_to_check = _pack_channels_raw.copy()
+            #     for _chn_index in range(len(_pack_channels_to_check)):
+            #         _pack_channels_to_check[_chn_index] += _asic*76
+                # append the two next channels
+                # _pack_channels_to_check.append(_pack_channels_to_check[-1] + 1)
+                # _pack_channels_to_check.append(_pack_channels_to_check[-1] + 1)
+                # print(f" ASIC {_asic}, channels {_pack_channels_to_check}:")
+                # for _mg in range(_machine_gun+1):
+                #     print(f"  MG {_mg}: V0 {v0_list[_mg][_pack_channels_to_check]}, V1 {v1_list[_mg][_pack_channels_to_check]}, V2 {v2_list[_mg][_pack_channels_to_check]}")
 
-            # _logger.info(f"12b DAC: {_12b_dac_value}, channel pack: {_pack_channels}")
-            # _logger.info(f"v0: {v0_list}")
-            # _logger.info(f"v0_err: {v0_err}")
-            # _logger.info(f"v1: {v1_list}")
-            # _logger.info(f"v1_err: {v1_err}")
-            # _logger.info(f"v2: {v2_list}")
-            # _logger.info(f"v2_err: {v2_err}")
-
-            # display_chn = 6
-            # display_samples = []
-
-            for _chn in _pack_channels:
-                _sub_addr = packetlib.uni_chn_to_subblock_list[_chn]
-                _reg_key  = UniChannelNum2RegKey(_i2c_dict, _sub_addr)
-                for _asic_index in range(_asic_num):    # turn off the high range injection
-                    if _chn + 76*_asic_index in unused_chn_list or _chn + 76*_asic_index in _dead_chn_list:
+            for _asic in range(_asic_num):
+                _asic_setting = _copied_asic_settings[_asic]
+                for _chn in _pack_channels:
+                    if _asic*72 + _chn in _dead_chn_list:
                         continue
-                    _current_config = _config[_asic_index]
-                    _reg_str    = _current_config["config"]["Register Settings"][_reg_key]
-                    _reg_val    = [int(x, 16) for x in _reg_str.split()]
-                    _reg_val[4] = _reg_val[4] & 0xFD
-                    _reg_val[14]= 0xC0
-                    _reg_val[2] = (_current_config["tot_chn_threshold"][_chn] & 0x3F) << 2
-                    if _toa_setting:
-                        _reg_val[1] = (_current_config["toa_chn_threshold"][_chn] & 0x3F) << 2
-                    if not packetlib.send_check_i2c_wrapper(_cmd_out_conn, _cmd_data_conn, _h2gcroc_ip, _h2gcroc_port, asic_num=_asic_index, fpga_addr = _fpga_address, sub_addr=_sub_addr, reg_addr=0x00, data=_reg_val, retry=_retry, verbose=_verbose):
-                        logger.warning(f"Failed to set Channel Wise Register {_reg_key} for ASIC {_asic_index}")
 
-                    _chn_v0_list = []
-                    _chn_v1_list = []
-                    _chn_v2_list = []
-                    _chn_v0_err  = []
-                    _chn_v1_err  = []
-                    _chn_v2_err  = []
+                    if not _asic_setting.set_chn_highrange(_chn, False):
+                        print_err(f"Failed to set high range for ASIC {_asic} channel {_chn}")
+                    if not _asic_setting.set_chn_lowrange(_chn, False):
+                        print_err(f"Failed to set low range for ASIC {_asic} channel {_chn}")
+
+                    if not _asic_setting.send_channel_register(_udp_target, _chn):
+                        print_err(f"Failed to send channel register for ASIC {_asic} channel {_chn}")
+
+            for _asic in range(_asic_num):
+                for _chn in _pack_channels_raw:
+                    _chn_v0_list, _chn_v1_list, _chn_v2_list = [], [], []
+                    _chn_v0_err,  _chn_v1_err,  _chn_v2_err  = [], [], []
 
                     for _machine_gun_index in range(_machine_gun+1):
-                        _chn_v0_list.append(v0_list[_machine_gun_index][_chn + _asic_index*76])
-                        _chn_v0_err.append(v0_err[_machine_gun_index][_chn + _asic_index*76])
-                        _chn_v1_list.append(v1_list[_machine_gun_index][_chn + _asic_index*76])
-                        _chn_v1_err.append(v1_err[_machine_gun_index][_chn + _asic_index*76])
-                        _chn_v2_list.append(v2_list[_machine_gun_index][_chn + _asic_index*76])
-                        _chn_v2_err.append(v2_err[_machine_gun_index][_chn + _asic_index*76])
+                        _chn_v0_list.append(v0_list[_machine_gun_index][_chn + _asic*76])
+                        _chn_v0_err.append(v0_err[_machine_gun_index][_chn + _asic*76])
+                        _chn_v1_list.append(v1_list[_machine_gun_index][_chn + _asic*76])
+                        _chn_v1_err.append(v1_err[_machine_gun_index][_chn + _asic*76])
+                        _chn_v2_list.append(v2_list[_machine_gun_index][_chn + _asic*76])
+                        _chn_v2_err.append(v2_err[_machine_gun_index][_chn + _asic*76])
 
-                        # if _chn + 76*_asic_index == display_chn:
-                        #     display_samples.append(_chn_v0_list[-1])
-
-                    # transpose the list
-                    #  print(f'index: {_chn + _asic_index*76}')
-                    val0_list_assembled[_chn + _asic_index*76]     = np.max(_chn_v0_list)
-                    val0_err_list_assembled[_chn + _asic_index*76] = _chn_v0_err[np.argmax(_chn_v0_list)]
-                    val1_list_assembled[_chn + _asic_index*76]     = np.max(_chn_v1_list)
-                    val1_err_list_assembled[_chn + _asic_index*76] = _chn_v1_err[np.argmax(_chn_v1_list)]
-                    val2_list_assembled[_chn + _asic_index*76]     = np.max(_chn_v2_list)
-                    val2_err_list_assembled[_chn + _asic_index*76] = _chn_v2_err[np.argmax(_chn_v2_list)]
-            
-            # if display_chn in _pack_channels:
-            #     _logger.debug(f"12b DAC: {_12b_dac_value}, channel samples: {display_samples}")
-            # -------------------------------------------------------
+                    val0_list_assembled[_chn + _asic*76]     = np.max(_chn_v0_list)
+                    val0_err_list_assembled[_chn + _asic*76] = _chn_v0_err[np.argmax(_chn_v0_list)]
+                    val1_list_assembled[_chn + _asic*76]     = np.max(_chn_v1_list)
+                    val1_err_list_assembled[_chn + _asic*76] = _chn_v1_err[np.argmax(_chn_v1_list)]
+                    val2_list_assembled[_chn + _asic*76]     = np.max(_chn_v2_list)
+                    val2_err_list_assembled[_chn + _asic*76] = _chn_v2_err[np.argmax(_chn_v2_list)]
 
         _scan_val0_list.append(val0_list_assembled)
         _scan_val0_err_list.append(val0_err_list_assembled)
