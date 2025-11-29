@@ -7,7 +7,7 @@ import numpy as np
 
 # * --- Set up script information ---------------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
-script_version_str  = '1.0'
+script_version_str  = '1.1'
 script_folder       = os.path.dirname(__file__)
 script_info_str = "-- " + script_id_str + " (v" + script_version_str + ")"
 while len(script_info_str) < 73:
@@ -28,6 +28,9 @@ parser.add_argument('--rf', type=int, help='Feedback resistor setting (0-15)', d
 parser.add_argument('--cf', type=int, help='Feedback capacitor setting (0-15)', default=0x0a)
 parser.add_argument('--cc', type=int, help='Current conveyor gain setting (0-15)', default=0x04)
 parser.add_argument('--cfcomp', type=int, help='Feedback capacitor compensation setting (0-15)', default=0x0a)
+
+# ui update
+parser.add_argument('--ui', type=bool, help='Enable UI updates during scan', default=False, nargs='?', const=True)
 args = parser.parse_args()
 
 # * --- Load configuration file -----------------------------------------------
@@ -136,6 +139,12 @@ _round_enable_half_tuning = [True, True, False, False, False]
 _round_enable_channel_tuning_reference_half = [False, True, True, False, False]
 _round_enable_channel_tuning_reference_target = [False, False, False, True, True]
 
+ui_total_steps = len(scan_12b_fine_range) * sum(_round_enable_half_tuning) + len(scan_12b_fine_range) * sum(_round_enable_channel_tuning_reference_half) + len(scan_final_12b_range) * sum(_round_enable_channel_tuning_reference_target)
+ui_current_step = 0
+if not args.ui:
+    ui_total_steps = 0
+    ui_current_step = 0
+
 r_f_code = args.rf & 0x0F
 c_f_code = args.cf & 0x0F
 cc_gain_code = args.cc & 0x0F
@@ -231,8 +240,8 @@ for _scan_round in range(len(_round_use_fine_scan)):
     _round_scan_range = scan_12b_fine_range if _round_use_fine_scan[_scan_round] else scan_12b_range
 
     print(f"- Starting scan round {_scan_round}...")
-    used_scan_values, scan_adc_list, scan_adc_error_list, scan_tot_list, scan_tot_error_list, scan_toa_list, scan_toa_error_list = caliblibX.Scan_12b(
-        udp_target, _round_scan_range, total_asic, scan_chn_pack, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry
+    used_scan_values, scan_adc_list, scan_adc_error_list, scan_tot_list, scan_tot_error_list, scan_toa_list, scan_toa_error_list, ui_current_step = caliblibX.Scan_12b(
+        udp_target, _round_scan_range, total_asic, scan_chn_pack, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry, _total_steps = ui_total_steps, _current_step = ui_current_step
     )
 
     if scan_adc_list is None:
@@ -288,8 +297,8 @@ for _scan_round in range(len(_round_use_fine_scan)):
                     toa_channel_trims[_asic * 72 + _chn_valid] = 63
 
 # show the final scan result
-used_scan_values, scan_adc_list, scan_adc_error_list, scan_tot_list, scan_tot_error_list, scan_toa_list, scan_toa_error_list = caliblibX.Scan_12b(
-    udp_target, scan_12b_fine_range, total_asic, scan_chn_pack, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry
+used_scan_values, scan_adc_list, scan_adc_error_list, scan_tot_list, scan_tot_error_list, scan_toa_list, scan_toa_error_list, ui_current_step = caliblibX.Scan_12b(
+    udp_target, scan_12b_fine_range, total_asic, scan_chn_pack, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry, _total_steps = ui_total_steps, _current_step = ui_current_step
 )
 
 if scan_adc_list is None:
@@ -316,4 +325,8 @@ for _asic in range(total_asic):
         final_i2c_settings.set_chn_trim_toa(_chn, toa_channel_trims[_asic*72 + _chn])
         final_i2c_settings.set_chn_trim_tot(_chn, tot_channel_trims[_asic*72 + _chn])
     final_i2c_settings.save_to_json(os.path.join(output_dump_folder, f"asic{_asic}_final_calib_i2c.json"))
-    print(f"- Saved final calibration I2C settings for ASIC {_asic} to asic{_asic}_final_calib_i2c.json")
+    json_full_path = os.path.join(output_dump_folder, f"asic{_asic}_final_calib_i2c.json")
+    print(f"- Saved final I2C settings for ASIC {_asic} to {json_full_path}")
+
+if args.ui:
+    print("ui_progress:100")
