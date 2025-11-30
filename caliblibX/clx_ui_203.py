@@ -17,6 +17,7 @@ from textual.widgets import (
     Checkbox,
     Pretty,
     ProgressBar,
+    Sparkline,
 )
 from textual.containers import Horizontal, Vertical, Center, Middle
 
@@ -26,6 +27,12 @@ from caliblibX.clx_ui_file_picker import FilePicker, FolderPicker
 class Page_203(Static):
     """Page for 203_ToAX script."""
     DEFAULT_CSS = """
+    Page_203 {
+        layout: grid;
+        grid-size: 1;
+        grid-rows: auto auto auto auto auto auto 1fr auto auto;
+        height: 1fr;
+    }
     Page_203 .sub-header {
         color: $text;
         text-style: bold;
@@ -57,6 +64,10 @@ class Page_203(Static):
     Page_203 .value_button {
         width: 25;
     }
+    Page_203 .value_enable {
+        width: 35;
+        height: 1;
+    }
     Page_203 .asic_json_grid {
         grid-size: 2;
         grid-columns: auto 1fr;
@@ -68,7 +79,7 @@ class Page_203(Static):
     Page_203 #toa_log {
         height: 1fr;
         border: solid #778873 50%;
-        margin-top: 2;
+        margin-top: 1;
     }
     Page_203 #start-toa-scan {
         width: 1fr;
@@ -89,6 +100,10 @@ class Page_203(Static):
     Page_203 #toa_template_label {
         width: 1fr;
     }
+    Page_203 .toa_sparkline {
+        height: 1;
+        width: 72;
+    }
     """
     def __init__(self, parent, fpga_id: str, initial_dict=None, **kwargs):
         super().__init__(**kwargs)
@@ -102,6 +117,11 @@ class Page_203(Static):
 
         self.settings_compact = True
 
+        self.scan_chn_pack_enable = False
+        self.scan_chn_pack = 8
+        self.scan_asic_chn_enable = False
+        self.scan_asic_chn = 76
+
         if initial_dict is not None:
             self.load_from_dict(initial_dict)
 
@@ -113,6 +133,10 @@ class Page_203(Static):
         return {
             "target_toa": self.target_toa,
             "template_json_path_list": self.template_json_path_list,
+            "scan_chn_pack_enable": self.scan_chn_pack_enable,
+            "scan_chn_pack": self.scan_chn_pack,
+            "scan_asic_chn_enable": self.scan_asic_chn_enable,
+            "scan_asic_chn": self.scan_asic_chn,
             "output_file_list": self.output_file_list,
         }
 
@@ -121,6 +145,10 @@ class Page_203(Static):
         self.target_toa = settings.get("target_toa", self.target_toa)
         self.template_json_path_list = settings.get("template_json_path_list", self.template_json_path_list)
         self.output_file_list = settings.get("output_file_list", self.output_file_list)
+        self.scan_chn_pack_enable = settings.get("scan_chn_pack_enable", self.scan_chn_pack_enable)
+        self.scan_chn_pack = settings.get("scan_chn_pack", self.scan_chn_pack)
+        self.scan_asic_chn_enable = settings.get("scan_asic_chn_enable", self.scan_asic_chn_enable)
+        self.scan_asic_chn = settings.get("scan_asic_chn", self.scan_asic_chn)
 
     def compose(self) -> ComposeResult:
         yield Static("203 ToAX", classes="sub-header")
@@ -143,6 +171,25 @@ class Page_203(Static):
                     Label(f"asic {i} input json file", classes="value_display", id=f"toa_template_label_asic{i}"),
                     Button("Browse", id=f"browse-toa-template-{i}", compact=self.settings_compact, classes="value_button"),
                     id=f"toa_template_grid_asic{i}", classes="asic_json_grid"
+                )
+        yield Horizontal(
+            Checkbox("[b]Channels injected in parallel:[/b]", id="toa_inject_parallel", classes="value_enable", compact=self.settings_compact, value=self.scan_chn_pack_enable),
+            Label(str(self.scan_chn_pack), id="toa_inject_parallel_value", classes="value_display"),
+            Input(placeholder="Number of channels", id="toa_inject_parallel_input", classes="value_input", compact=self.settings_compact),
+            id="toa_inject_parallel_grid", classes="value_grid",
+        )
+        yield Horizontal(
+            Checkbox("[b]Channels per ASIC to scan:[/b]", id="toa_scan_per_asic", classes="value_enable", compact=self.settings_compact, value=self.scan_asic_chn_enable),
+            Label(str(self.scan_asic_chn), id="toa_scan_per_asic_value", classes="value_display"),
+            Input(placeholder="Number of channels", id="toa_scan_per_asic_input", classes="value_input", compact=self.settings_compact),
+            id="toa_scan_per_asic_grid", classes="value_grid",
+        )
+        with Vertical():
+            for i in range(int(self.parent_panel.asic_num)):
+                yield Horizontal(
+                    Label(f"ASIC {i} ToA:", classes="value_label"),
+                    Sparkline(id=f"toa_sparkline_asic{i}", classes="toa_sparkline"),
+                    id=f"toa_sparkline_grid_asic{i}", classes="value_grid"
                 )
         yield Log(
             id="toa_log",
@@ -174,6 +221,37 @@ class Page_203(Static):
                 self.notify(f"Set Target ToA to {self.target_toa}.", severity="info")
             except ValueError as e:
                 self.notify(f"Invalid Target ToA: {e}", severity="error")
+        elif event.input.id == "toa_inject_parallel_input":
+            try:
+                value = int(event.value)
+                if value <= 0 or value > 72:
+                    raise ValueError("Number of channels must be between 1 and 72.")
+                self.scan_chn_pack = value
+                display_label = self.query_one("#toa_inject_parallel_grid > .value_display", Label)
+                display_label.update(str(self.scan_chn_pack))
+                self.notify(f"Set Channels injected in parallel to {self.scan_chn_pack}.", severity="info")
+            except ValueError as e:
+                self.notify(f"Invalid number of channels: {e}", severity="error")
+        elif event.input.id == "toa_scan_per_asic_input":
+            try:
+                value = int(event.value)
+                if value <= 0 or value > 76:
+                    raise ValueError("Number of channels must be between 1 and 76.")
+                self.scan_asic_chn = value
+                display_label = self.query_one("#toa_scan_per_asic_grid > .value_display", Label)
+                display_label.update(str(self.scan_asic_chn))
+                self.notify(f"Set Channels per ASIC to scan to {self.scan_asic_chn}.", severity="info")
+            except ValueError as e:
+                self.notify(f"Invalid number of channels: {e}", severity="error")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Handle checkbox changed events."""
+        if event.checkbox.id == "toa_inject_parallel":
+            self.scan_chn_pack_enable = event.value
+            # self.notify(f"Set Channels injected in parallel to {self.scan_chn_pack_enable}.", severity="info")
+        elif event.checkbox.id == "toa_scan_per_asic":
+            self.scan_asic_chn_enable = event.value
+            # self.notify(f"Set Channels per ASIC to scan to {self.scan_asic_chn_enable}.", severity="info")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button pressed events."""
@@ -221,6 +299,10 @@ class Page_203(Static):
         if len(self.template_json_path_list) == int(self.parent_panel.asic_num):
             asic_json_str = ','.join(self.template_json_path_list)
             self.run_cmd += f' -i {asic_json_str}'
+        if self.scan_chn_pack_enable:
+            self.run_cmd += f' --scan-pack {self.scan_chn_pack}'
+        if self.scan_asic_chn_enable:
+            self.run_cmd += f' --scan-chn {self.scan_asic_chn}'
 
         log.write_line(f"▶ Running command: {self.run_cmd}")
 
@@ -248,6 +330,22 @@ class Page_203(Static):
                         progress_bar = self.query_one("#toa-progress-bar", ProgressBar)
                         bounded_value = max(0, min(progress_bar.total, progress_value))
                         progress_bar.update(progress=bounded_value)
+                    except (IndexError, ValueError):
+                        pass
+                # print(f"ui_asic{_asic}: " + " ".join([f"{int(x):3d}" for x in toa_turn_on_asic_valid]))
+                elif text.startswith("ui_asic"):
+                    try:
+                        asic_values_str = text.split(":", 1)[1].strip()
+                        asic_values = asic_values_str.split(" ") 
+                        asic_index_str = text.split("ui_asic",1)[1].split(":",1)[0].strip()
+                        asic_index = int(asic_index_str)
+                        # load to sparkline
+                        sparkline = self.query_one(f"#toa_sparkline_asic{asic_index}", Sparkline)
+                        sparkline.data = [int(x) for x in asic_values if x.strip().isdigit()]
+                        # update sparkline label
+                        max_value = max([int(x) for x in asic_values if x.strip().isdigit()])
+                        sparkline_label = self.query_one(f"#toa_sparkline_grid_asic{asic_index} > .value_label", Label)
+                        sparkline_label.update(f"ASIC {asic_index} ToA (max {max_value}):")
                     except (IndexError, ValueError):
                         pass
                 elif text.startswith("- Saved final I2C settings for ASIC"):

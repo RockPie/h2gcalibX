@@ -7,7 +7,7 @@ import numpy as np
 
 # * --- Set up script information ---------------------------------------------
 script_id_str       = os.path.basename(__file__).split('.')[0]
-script_version_str  = '1.1'
+script_version_str  = '1.2'
 script_folder       = os.path.dirname(__file__)
 script_info_str = "-- " + script_id_str + " (v" + script_version_str + ")"
 while len(script_info_str) < 73:
@@ -28,6 +28,10 @@ parser.add_argument('--rf', type=int, help='Feedback resistor setting (0-15)', d
 parser.add_argument('--cf', type=int, help='Feedback capacitor setting (0-15)', default=0x0a)
 parser.add_argument('--cc', type=int, help='Current conveyor gain setting (0-15)', default=0x04)
 parser.add_argument('--cfcomp', type=int, help='Feedback capacitor compensation setting (0-15)', default=0x0a)
+
+# scan settings
+parser.add_argument('--scan-pack', type=int, help='Number of channels to scan in parallel', default=8)
+parser.add_argument('--scan-chn', type=int, help='Number of channels to scan per ASIC', default=72)
 
 # ui update
 parser.add_argument('--ui', type=bool, help='Enable UI updates during scan', default=False, nargs='?', const=True)
@@ -109,6 +113,11 @@ gen_fcmd_L1A                = 0b01001011
 
 # - scan settings
 scan_chn_pack               = 8
+if args.scan_pack is not None:
+    scan_chn_pack = int(args.scan_pack)
+scan_asic_chn            = 76
+if args.scan_chn is not None:
+    scan_asic_chn = int(args.scan_chn)
 scan_12b_range              = range(0, 160, 20)
 scan_12b_fine_range         = range(max(int(target_toa - 27),0), int(target_toa + 27), 6)
 scan_final_12b_range        = range(max(int(target_toa - 15),0), int(target_toa + 15), 3)
@@ -241,7 +250,7 @@ for _scan_round in range(len(_round_use_fine_scan)):
 
     print(f"- Starting scan round {_scan_round}...")
     used_scan_values, scan_adc_list, scan_adc_error_list, scan_tot_list, scan_tot_error_list, scan_toa_list, scan_toa_error_list, ui_current_step = caliblibX.Scan_12b(
-        udp_target, _round_scan_range, total_asic, scan_chn_pack, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry, _total_steps = ui_total_steps, _current_step = ui_current_step
+        udp_target, _round_scan_range, total_asic, scan_chn_pack, scan_asic_chn,machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry, _total_steps = ui_total_steps, _current_step = ui_current_step
     )
 
     if scan_adc_list is None:
@@ -254,6 +263,12 @@ for _scan_round in range(len(_round_use_fine_scan)):
     toa_turn_on  = caliblibX.TurnOnPoints(scan_toa_list_np, used_scan_values, toa_turn_on_threshold)
     half_turn_on = caliblibX.HalfTurnOnAverage(toa_turn_on, [], dead_channel_list, total_asic)
     half_turn_on[np.isnan(half_turn_on)] = target_toa
+
+    if args.ui:
+        for _asic in range(total_asic):
+            toa_turn_on_asic = toa_turn_on[_asic*76:(_asic+1)*76]
+            toa_turn_on_asic_valid = caliblibX.channel_list_remove_cm_calib(toa_turn_on_asic)
+            print(f"ui_asic{_asic}: " + " ".join([f"{int(x):3d}" for x in toa_turn_on_asic_valid]))
 
     fig_adc, ax_adc = caliblibX.Draw2DIM("ADC Values", "Channel Number", "12b DAC Value", total_asic, scan_adc_list_np, os.path.join(output_dump_folder, f"scan{_scan_round}_val0.pdf"), [str(x) for x in used_scan_values], _data_saving_path = os.path.join(output_dump_folder, f"scan{_scan_round}_val0.csv"), _image_saving_path = os.path.join(output_dump_folder, f"scan{_scan_round}_val0.png"))
     plt.close(fig_adc)
@@ -298,7 +313,7 @@ for _scan_round in range(len(_round_use_fine_scan)):
 
 # show the final scan result
 used_scan_values, scan_adc_list, scan_adc_error_list, scan_tot_list, scan_tot_error_list, scan_toa_list, scan_toa_error_list, ui_current_step = caliblibX.Scan_12b(
-    udp_target, scan_12b_fine_range, total_asic, scan_chn_pack, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry, _total_steps = ui_total_steps, _current_step = ui_current_step
+    udp_target, scan_12b_fine_range, total_asic, scan_chn_pack, scan_asic_chn, machine_gun, expected_event_number, i2c_fragment_life, dead_channel_list, register_settings_list, toa_halves, tot_halves, toa_channel_trims, tot_channel_trims, i2c_retry, _total_steps = ui_total_steps, _current_step = ui_current_step
 )
 
 if scan_adc_list is None:
@@ -307,6 +322,15 @@ if scan_adc_list is None:
 scan_adc_list_np = np.array(scan_adc_list).transpose().transpose()
 scan_tot_list_np = np.array(scan_tot_list).transpose().transpose()
 scan_toa_list_np = np.array(scan_toa_list).transpose().transpose()
+
+half_turn_on = caliblibX.HalfTurnOnAverage(caliblibX.TurnOnPoints(scan_toa_list_np, used_scan_values, toa_turn_on_threshold), [], dead_channel_list, total_asic)
+half_turn_on[np.isnan(half_turn_on)] = target_toa
+
+if args.ui:
+    for _asic in range(total_asic):
+        toa_turn_on_asic = caliblibX.TurnOnPoints(scan_toa_list_np, used_scan_values, toa_turn_on_threshold)[_asic*76:(_asic+1)*76]
+        toa_turn_on_asic_valid = caliblibX.channel_list_remove_cm_calib(toa_turn_on_asic)
+        print(f"ui_asic{_asic}: " + " ".join([f"{int(x):3d}" for x in toa_turn_on_asic_valid]))
 
 fig_adc, ax_adc = caliblibX.Draw2DIM("Final ADC Values", "Channel Number", "12b DAC Value", total_asic, scan_adc_list_np, os.path.join(output_dump_folder, f"final_scan_val0.pdf"), [str(x) for x in used_scan_values], _data_saving_path = os.path.join(output_dump_folder, f"final_scan_val0.csv"), _image_saving_path = os.path.join(output_dump_folder, f"final_scan_val0.png"))
 plt.close(fig_adc)

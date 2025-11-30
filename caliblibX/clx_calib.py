@@ -805,7 +805,7 @@ def Inj_Normal(_cmd_out_conn, _cmd_data_conn, _data_data_conn, _h2gcroc_ip, _h2g
 
     return val0_list_assembled, val0_err_list_assembled, val1_list_assembled, val1_err_list_assembled, val2_list_assembled, val2_err_list_assembled
 
-def Scan_12b(_udp_target, _progress_bar, _asic_num, _scan_chn_pack, _machine_gun, _expected_event_number, _fragment_life, _dead_chn_list, _asic_settings, _toa_halves, _tot_halves, _toa_channels, _tot_channels, _retry, _toa_setting=True, _verbose=False, _total_steps=0, _current_step=0):
+def Scan_12b(_udp_target, _progress_bar, _asic_num, _scan_chn_pack, _scan_asic_chn, _machine_gun, _expected_event_number, _fragment_life, _dead_chn_list, _asic_settings, _toa_halves, _tot_halves, _toa_channels, _tot_channels, _retry, _toa_setting=True, _verbose=False, _total_steps=0, _current_step=0):
     if _asic_num != len(_asic_settings):
         print_err("Number of ASICs does not match the number of configurations")
         return
@@ -892,7 +892,7 @@ def Scan_12b(_udp_target, _progress_bar, _asic_num, _scan_chn_pack, _machine_gun
             while len(_pack_channels) < _scan_chn_pack and not flag_all_channels_feed:
                 for _half in range(2):
                     _chn_index = current_chn_half + _half*38
-                    if _chn_index < 8:
+                    if _chn_index < _scan_asic_chn:
                         _chn_valid = single_channel_index_remove_cm_calib(_chn_index)
                         _pack_channels_raw.append(_chn_index)
                         if _chn_valid != -1:

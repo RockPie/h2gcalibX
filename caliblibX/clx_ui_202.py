@@ -34,6 +34,10 @@ from caliblibX.clx_ui_file_picker import FilePicker, FolderPicker
 class Page_202(Static):
     """Page for 202_PedestalX script."""
     DEFAULT_CSS = """
+    Page_202 {
+        layout: grid;
+        grid-rows: auto auto auto auto auto auto auto 1fr auto auto;
+    }
     Page_202 .sub-header {
         color: $text;
         text-style: bold;
@@ -50,7 +54,7 @@ class Page_202(Static):
     Page_202 #pedestal-log {
         height: 1fr;
         border: solid #778873 50%;
-        margin-top: 2;
+        margin-top: 1;
     }
     Page_202 .value_grid {
         grid-size: 3;

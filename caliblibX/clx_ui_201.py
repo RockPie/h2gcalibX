@@ -31,6 +31,10 @@ from caliblibX.clx_ui_file_picker import FilePicker, FolderPicker
 class Page_201(Static):
     """Page for 201_IODelayX script."""
     DEFAULT_CSS = """
+    Page_201 {
+        layout: grid;
+        grid-rows: auto auto auto 1fr auto auto;
+    }
     Page_201 .sub-header {
         color: $text;
         text-style: bold;
@@ -92,7 +96,7 @@ class Page_201(Static):
     Page_201 #iodelay-log {
         height: 1fr;
         border: solid #778873 50%;
-        margin-top: 5;
+        margin-top: 1;
     }
 
     Page_201 ProgressBar Bar {
