@@ -6,7 +6,6 @@ from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from collections import deque
 from collections import OrderedDict
-import packetlib
 from .clx_udp import udp_target
 from .clx_data import single_channel_index_remove_cm_calib
 import copy

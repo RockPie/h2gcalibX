@@ -344,8 +344,9 @@ class Page_203(Static):
                         sparkline.data = [int(x) for x in asic_values if x.strip().isdigit()]
                         # update sparkline label
                         max_value = max([int(x) for x in asic_values if x.strip().isdigit()])
+                        min_value = min([int(x) for x in asic_values if x.strip().isdigit()])
                         sparkline_label = self.query_one(f"#toa_sparkline_grid_asic{asic_index} > .value_label", Label)
-                        sparkline_label.update(f"ASIC {asic_index} ToA (max {max_value}):")
+                        sparkline_label.update(f"ASIC {asic_index} ToA ({min_value}-{max_value}):")
                     except (IndexError, ValueError):
                         pass
                 elif text.startswith("- Saved final I2C settings for ASIC"):
