@@ -31,7 +31,7 @@ parser.add_argument('--cfcomp', type=int, help='Feedback capacitor compensation 
 
 # scan settings
 parser.add_argument('--scan-pack', type=int, help='Number of channels to scan in parallel', default=8)
-parser.add_argument('--scan-chn', type=int, help='Number of channels to scan per ASIC', default=72)
+parser.add_argument('--scan-chn', type=int, help='Number of channels to scan per ASIC', default=76)
 
 # ui update
 parser.add_argument('--ui', type=bool, help='Enable UI updates during scan', default=False, nargs='?', const=True)

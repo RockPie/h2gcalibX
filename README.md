@@ -14,3 +14,14 @@
 
 3. Choose the FPGA UDP setting json file, and make sure the `ASIC Number` is set correctly.
 ![FPGA UDP Config](doc/tui_fpga_setting.png)
+
+4. Click the `Start Socket Pool` button to set up the UDP communication.
+
+5. Now you can run the IODelay settings for the FPGA to correctly receive data from the H2GCROC.
+![IODelay Setting](doc/tui_iodelay.png)
+
+6. For the pedestal calibration, go to the `PedestalX` tab, set the target pedestal value in ADC, and choose the template register json file. This will take around 5 minutes for a 2-ASIC setup. And the results will be saved in the `dump/` folder.
+![Pedestal Calibration](doc/tui_pedestalx.png)
+
+7. Next step is usually the ToA scan in the `ToAX` tab. Again, set the target ToA value in injection DAC, and choose the tamplate register json file. Is is recommended to use the `Read from 202 output` button to load the pedestal calibration results. This will take around 15 minutes if you inject 8 channels in parallel for a 2-ASIC setup. The results will also be saved in the `dump/` folder.
+![ToA Calibration](doc/tui_toax.png)
